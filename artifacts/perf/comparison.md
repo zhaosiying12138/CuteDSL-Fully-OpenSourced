@@ -20,3 +20,17 @@ Faithful record: the self-stack GEMM is a correctness-first 1-warp-per-CTA
 kernel without TMA, multi-warp tiling, or pipelining — ~28% of cuBLAS f32
 and ~2.7% of the official tuned TMA GEMM. Closing this gap is the M6/M7
 work (TMA-tiled multi-warp GEMM with warp specialization).
+
+## Self-stack pipelined TMA GEMM (2-CTA x 64x8 tile, 2-stage)
+
+| Shape (per-CTA useful work) | Time | Useful GFLOP/s |
+|---|---|---|
+| 128x16x512 (block-diagonal tiles) | 0.079 ms | 26.6 |
+| 128x16x1024 | 0.078 ms | 53.5 |
+
+Faithful record: this is the M6.3 correctness-first pipeline kernel with a
+narrow N=8 tile (one mma atom in N); useful-FLOP density is inherently low
+per CTA. The dominant remaining gaps to the official 43 TFLOP/s dense GEMM:
+N-direction atom tiling (128-wide), multi-warp (8-12 warps), deeper stages,
+warp specialization. Each is an additive step on the now-verified pipeline
+skeleton.
