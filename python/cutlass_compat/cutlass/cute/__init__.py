@@ -234,3 +234,9 @@ def named_barrier_sync(id_, count):
     from self_cutedsl.frontend import builtins
 
     builtins.named_barrier_sync(id_, count)
+
+
+def smem_stage(smem_arr, stage, elems_per_stage):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.smem_stage(smem_arr, stage, elems_per_stage)

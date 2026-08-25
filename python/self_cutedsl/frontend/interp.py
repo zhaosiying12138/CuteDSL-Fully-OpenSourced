@@ -110,6 +110,9 @@ class KernelInterpreter:
                 val = self.eval(node.value)
                 if isinstance(base, _b.SmemArray):
                     ety = "f16" if base.elem.name == "f16" else "f32"
+                    soff = getattr(base, "stage_offset", None)
+                    if soff is not None:
+                        idx = self.emitter.idx_binop("arith.addi", idx, soff)
                     p = self.emitter.gep_smem(base.ptr, idx, ety)
                     if ety == "f16":
                         self.emitter.store_smem_f16(val, p)
@@ -340,6 +343,11 @@ class KernelInterpreter:
                     self.env[gen.target.id] = i
                 out.append(self.eval(node.elt))
             return out
+        if isinstance(node, ast.IfExp):
+            cond = self.eval(node.test)
+            if isinstance(cond, SSA):
+                raise InterpError("dynamic IfExp unsupported; use if/else stmt")
+            return self.eval(node.body) if cond else self.eval(node.orelse)
         if isinstance(node, ast.JoinedStr):
             parts = []
             for v in node.values:
@@ -395,6 +403,9 @@ class KernelInterpreter:
 
         if isinstance(base, _bb.SmemArray):
             i = self.eval(slice_node)
+            off = getattr(base, "stage_offset", None)
+            if off is not None:
+                i = self.emitter.idx_binop("arith.addi", i, off)
             p = self.emitter.gep_smem(base.ptr, i,
                                       "f16" if base.elem.name == "f16" else "f32")
             ty = "f16" if base.elem.name == "f16" else "f32"

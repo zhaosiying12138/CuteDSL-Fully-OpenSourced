@@ -291,10 +291,13 @@ def make_smem_array(name: str, count: int, element=None):
     return SmemArray(ptr, int(count), elem)
 
 
-def ldmatrix(smem: SmemArray, row_ssa, col_elems: int = 0, num: int = 4, trans: bool = False):
-    """ldmatrix from smem at element offset (dynamic row base OK)."""
+def ldmatrix(smem, row_ssa, col_elems: int = 0, num: int = 4, trans: bool = False):
+    """ldmatrix from smem at element offset (staged windows honored)."""
     e = _emitter()
     off = row_ssa
+    soff = getattr(smem, "stage_offset", None)
+    if soff is not None:
+        off = e.idx_binop("arith.addi", off, soff)
     p = e.gep_smem(smem.ptr, off)
     return e.ldmatrix(p, num, trans)
 
@@ -338,9 +341,14 @@ def make_mbarrier(name: str, count: int):
 
 
 def tma_load(tma, smem, bar, coords):
-    """cute.nvgpu.cpasync TMA G2S: smem tile (SmemArray/SSA) + mbarrier SSA."""
+    """cute.nvgpu.cpasync TMA G2S: smem tile (SmemArray/staged) + mbarrier."""
     e = _emitter()
     smem_ptr = getattr(smem, "ptr", smem)
+    off = getattr(smem, "stage_offset", None)
+    if off is not None:
+        elem = getattr(smem, "elem", None)
+        ety = "f16" if getattr(elem, "name", "").lower() in ("f16", "float16") else "f32"
+        smem_ptr = e.gep_smem(smem_ptr, off, ety)
     tma_ptr = getattr(tma, "desc_ptr", tma)
     e.tma_load(smem_ptr, tma_ptr, bar, coords)
 
@@ -448,3 +456,25 @@ def copy(atom_or_view, *rest, mbarrier=None, pred=None):
         e.tma_load(smem, desc, mbarrier, coords)
         return
     raise NotImplementedError(f"copy on {type(atom_or_view)}")
+
+
+def smem_stage(smem_arr, stage, elems_per_stage):
+    """Window a staged smem array at (stage * elems_per_stage). stage may
+    be an SSA index — returns a SmemArray view with SSA offset base."""
+    e = _emitter()
+    from .emitter import SSA as _SSA
+    if isinstance(stage, int):
+        off = e.ssa("index", f"arith.constant {stage * int(elems_per_stage)} : index")
+    else:
+        c = e.ssa("index", f"arith.constant {int(elems_per_stage)} : index")
+        prod = e.idx_binop("arith.muli", stage, c) if stage.type == "index" else \
+            e.idx_binop("arith.muli", e.ssa("index", f"arith.index_cast {stage.name} : i32 to index"), c)
+        off = prod
+    class _Staged:
+        pass
+    v = _Staged()
+    v.ptr = smem_arr.ptr
+    v.count = int(elems_per_stage)
+    v.elem = smem_arr.elem
+    v.stage_offset = off
+    return v
