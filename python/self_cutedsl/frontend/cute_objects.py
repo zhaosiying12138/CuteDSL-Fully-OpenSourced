@@ -363,3 +363,46 @@ class PartitionedAccumulator:
 
 def make_tiled_mma(op, atom_layout=None, num_warps=None):
     return TiledMma(op, atom_layout, num_warps)
+
+
+# ------------------------------------------------ in-kernel views (M6.2)
+class KernelTensorView:
+    """A Tensor view usable INSIDE the traced kernel: hierarchical layout
+    (tile, rest) with an SSA-augmented origin. Subscripting with rest
+    coords (None/int/SSA) selects a concrete tile base."""
+
+    def __init__(self, base_ssa, layout, element, origin=None, smem=None):
+        self.base_ssa = base_ssa    # SSA ptr (gmem or smem) or SmemArray
+        self.layout = layout        # Layout((tile),(rest))
+        self.element = element
+        self.origin = origin or ()  # tuple of SSA/int element offsets
+        self.smem = smem            # SmemArray if shared
+
+    @property
+    def shape(self):
+        return self.layout.shape
+
+    @property
+    def type(self):
+        return f"cutlass.Tensor(element={getattr(self.element, 'name', '?')}, shape={self.shape})"
+
+
+def make_kernel_view(base_ssa, layout, element, smem=None):
+    return KernelTensorView(base_ssa, layout, element, smem=smem)
+
+
+def view_select(view, rest_coord):
+    """gX[(None,...), (bidx,...)]-style rest selection -> concrete tile view
+    whose origin carries the SSA element offset."""
+    rest_shape = _flatten(view.layout.shape[1])
+    rest_strides_f = _flatten(view.layout.stride[1])
+    coord = rest_coord if isinstance(rest_coord, (tuple, list)) else (rest_coord,)
+    off_terms = []
+    for s, d, c in zip(rest_shape, rest_strides_f, coord):
+        if c is None or isinstance(c, int) and c == 0:
+            continue
+        off_terms.append((c, d))
+    return KernelTensorView(view.base_ssa, Layout(view.layout.shape[0],
+                                                  view.layout.stride[0]),
+                            view.element, origin=tuple(view.origin) +
+                            tuple(off_terms), smem=view.smem)
