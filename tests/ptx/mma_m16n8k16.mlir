@@ -15,6 +15,7 @@ module attributes {gpu.container_module} {
       %c4 = arith.constant 4 : i64
       %c8 = arith.constant 8 : i64
       %c16 = arith.constant 16 : i64
+      %cone = arith.constant 1 : i64
       %group = arith.divsi %tid64, %c4 : i64
       %tig = arith.remsi %tid64, %c4 : i64
 
@@ -72,10 +73,7 @@ module attributes {gpu.container_module} {
 
       // -------- mma.sync
       %z0 = arith.constant 0.0 : f32
-      %r = nvvm.mma.sync A[%a0, %a1, %a2, %a3] B[%b0, %b1] C[%z0, %z0, %z0, %z0]
-           {layoutA = #nvvm.mma_layout<row>, layoutB = #nvvm.mma_layout<col>,
-            shape = {k = 16 : i32, m = 16 : i32, n = 8 : i32}}
-           : (vector<2xf16>, vector<2xf16>, f32) -> !llvm.struct<(f32, f32, f32, f32)>
+      %r = nvvm.mma.sync A[%a0, %a1, %a2, %a3] B[%b0, %b1] C[%z0, %z0, %z0, %z0] {layoutA = #nvvm.mma_layout<row>, layoutB = #nvvm.mma_layout<col>, shape = #nvvm.shape<m = 16, n = 8, k = 16>} : (vector<2xf16>, vector<2xf16>, f32) -> !llvm.struct<(f32, f32, f32, f32)>
 
       // -------- store D: c0/c1 (g, t2 / +1); c2/c3 (g+8, ...)
       %d0 = llvm.extractvalue %r[0] : !llvm.struct<(f32, f32, f32, f32)>
@@ -86,9 +84,9 @@ module attributes {gpu.container_module} {
       %rowD0 = arith.muli %group, %c8 : i64
       %rowD1 = arith.muli %gp8, %c8 : i64
       %fd0 = arith.addi %rowD0, %t2 : i64
-      %fd1 = arith.addi %fd0, %c2 : i64
+      %fd1 = arith.addi %fd0, %cone : i64
       %fd2 = arith.addi %rowD1, %t2 : i64
-      %fd3 = arith.addi %fd2, %c2 : i64
+      %fd3 = arith.addi %fd2, %cone : i64
 
       %pd0 = llvm.getelementptr %d[%fd0] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
       llvm.store %d0, %pd0 : f32, !llvm.ptr<1>

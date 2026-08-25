@@ -60,11 +60,10 @@ class LaunchManifest:
 class DriverJit:
     """Owns CUDA init + one module loaded from textual PTX."""
 
-    _func_cache: dict = {}
-
     def __init__(self, ptx: str | bytes):
+        self._func_cache: dict = {}
         if isinstance(ptx, str):
-            ptx = ptx.encode()
+            ptx = ptx.encode() + b"\x00"  # NUL-terminated image (driver reads to NUL)
         # Sanity: our one and only target.
         head = ptx[:512].decode(errors="replace")
         if ".target sm_120a" not in head:
@@ -80,12 +79,11 @@ class DriverJit:
 
     def launch(self, manifest: LaunchManifest, *args: Any,
                stream=None, grid=None, block=None) -> None:
-        key = manifest.entry
-        func = DriverJit._func_cache.get(key)
+        func = self._func_cache.get(manifest.entry)
         if func is None:
             err, func = cu.cuModuleGetFunction(self._mod, manifest.entry.encode())
             _check(err, "cuModuleGetFunction")
-            DriverJit._func_cache[key] = func
+            self._func_cache[manifest.entry] = func
         grid = grid or manifest.grid
         block = block or manifest.block
         packed = _pack_args(manifest, args)
