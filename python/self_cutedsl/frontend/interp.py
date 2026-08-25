@@ -81,6 +81,11 @@ class KernelInterpreter:
 
     # --------------------------------------------------------------- stmts
     def exec_stmt(self, node: ast.stmt) -> None:
+        import os as _os
+        if _os.environ.get("SC_TRACE2"):
+            import sys as _s
+            print("STMT:", type(node).__name__,
+                  getattr(getattr(node, "targets", [None])[0], "lineno", "?"), file=_s.stderr)
         if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Subscript):
             tgt = node.targets[0]
             base = self.eval(tgt.value)
@@ -92,11 +97,21 @@ class KernelInterpreter:
                 base.slots[int(_const_index(idx))] = val
             else:
                 from .kernel_objects import KernelTensor
+                from . import builtins as _b
 
                 idx = self.eval(tgt.slice) if not isinstance(tgt.slice, ast.Tuple) else self.eval(tgt.slice)
                 val = self.eval(node.value)
-                ptr = base.ptr if isinstance(base, KernelTensor) else base
-                self._store_elem(ptr, idx, val)
+                if isinstance(base, _b.SmemArray):
+                    import os as _os
+                    if _os.environ.get("SC_TRACE"):
+                        import sys as _s
+                        print("SMEM STORE fired, val:", val, file=_s.stderr)
+                    p = self.emitter.gep_smem(base.ptr, idx)
+                    self.emitter.store_smem_f16(val, p)
+                else:
+                    ptr = base.ptr if isinstance(base, KernelTensor) else base
+                    elem = getattr(getattr(base, "meta", None), "element_type", None)
+                    self._store_elem(ptr, idx, val, elem)
         elif isinstance(node, ast.Assign):
             value = self.eval(node.value)
             self.assign(node.targets[0], value)
@@ -142,10 +157,16 @@ class KernelInterpreter:
         assert isinstance(node.iter, ast.Call) and getattr(node.iter.func, "id", "") == "range", \
             "only range() loops supported"
         iter_args = [self.eval(a) for a in node.iter.args]
+        import os as _os
+        if _os.environ.get("SC_TRACE"):
+            print("EXEC_FOR range args:", iter_args, file=__import__("sys").stderr)
         if all(isinstance(a, int) for a in iter_args):
             # constexpr loop: unroll in Python (mirrors official partial eval)
-            lo, hi, st = (iter_args + [None, None])[:3]
-            rng = range(lo, hi if hi is not None else lo, st if st is not None else 1)
+            filled = (list(iter_args) + [0, None, 1])[:3]
+            lo = filled[0] if len(iter_args) > 1 else 0
+            hi = filled[1] if len(iter_args) > 1 else iter_args[0]
+            st = filled[2] if len(iter_args) > 2 else 1
+            rng = range(lo, hi, st)
             # rebind the target as constexpr per iteration
             for i in rng:
                 self.assign(node.target, i)
@@ -157,11 +178,69 @@ class KernelInterpreter:
         lb = self._to_index(args[0]) if not isinstance(args[0], int) else self._index_const(args[0])
         ub = self._to_index(args[1]) if not isinstance(args[1], int) else self._index_const(args[1])
         st = self._to_index(args[2]) if not isinstance(args[2], int) else self._index_const(args[2])
-        iv = self.emitter.open_for(lb, ub, st)
+        carried = self._loop_carried(node.body)
+        init_vals, init_shapes = [], []
+        for name in carried:
+            v = self.env[name]
+            if isinstance(v, SSA):
+                init_vals.append(v)
+                init_shapes.append((name, None))
+            else:
+                init_vals.extend(v)
+                init_shapes.append((name, len(v)))
+
+        iv, arg_ssas, res_ssas = self.emitter.open_for(lb, ub, st, init_vals or None)
         self.assign(node.target, iv)
+        k = 0
+        for name, length in init_shapes:
+            if length is None:
+                self.env[name] = arg_ssas[k]
+                k += 1
+            else:
+                self.env[name] = list(arg_ssas[k:k + length])
+                k += length
         for s in node.body:
             self.exec_stmt(s)
+        if init_shapes:
+            cur = []
+            for name, length in init_shapes:
+                v = self.env[name]
+                cur.extend([v] if isinstance(v, SSA) else list(v))
+            self.emitter.yield_for(cur)
         self.emitter.close_for()
+        k = 0
+        for name, length in init_shapes:
+            if length is None:
+                self.env[name] = res_ssas[k]
+                k += 1
+            else:
+                self.env[name] = list(res_ssas[k:k + length])
+                k += length
+
+    def _loop_carried(self, body) -> list[str]:
+        """Names reassigned in the loop body holding non-index SSA values or
+        lists of SSAs (mma accumulators etc.)."""
+        assigned = set()
+
+        def walk(n):
+            if isinstance(n, ast.Assign):
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        assigned.add(t.id)
+            for ch in ast.iter_child_nodes(n):
+                walk(ch)
+
+        for st in body:
+            walk(st)
+        out = []
+        for name in sorted(assigned):
+            v = self.env.get(name)
+            if isinstance(v, SSA) and v.type not in ("index", "i32", "i64"):
+                out.append(name)
+            elif isinstance(v, list) and v and all(isinstance(x, SSA) for x in v) \
+                    and all(x.type not in ("index", "i32", "i64") for x in v):
+                out.append(name)
+        return out
 
     def _to_index(self, v) -> SSA:
         if isinstance(v, SSA):
@@ -234,6 +313,23 @@ class KernelInterpreter:
         if isinstance(node, ast.Subscript):
             base = self.eval(node.value)
             return self._subscript(base, node.slice)
+        if isinstance(node, ast.ListComp):
+            # support [expr for x in range(...)] with constexpr bounds
+            gen = node.generators[0]
+            assert isinstance(gen.iter, ast.Call) and gen.iter.func.id == "range", \
+                "listcomp over range() only"
+            args = [self.eval(a) for a in gen.iter.args]
+            assert all(isinstance(a, int) for a in args), "listcomp bounds must be constexpr"
+            rng = range(*(args if len(args) > 1 else (0, args[0])))
+            out = []
+            for i in rng:
+                if isinstance(gen.target, ast.Tuple) and len(gen.target.elts) == 2:
+                    self.env[gen.target.elts[0].id] = i
+                    self.env[gen.target.elts[1].id] = i - rng.start
+                else:
+                    self.env[gen.target.id] = i
+                out.append(self.eval(node.elt))
+            return out
         if isinstance(node, ast.JoinedStr):
             parts = []
             for v in node.values:
@@ -268,7 +364,12 @@ class KernelInterpreter:
                 return BlockTile(base.ptr, meta, idx)
             # flat element access (1-D untiled tensors, M2 path)
             i = self.eval(slice_node)
-            return self._load_elem(base.ptr, i)
+            import os as _os
+            if _os.environ.get("SC_TRACE3"):
+                import sys as _s
+                print("LOAD flat idx SSA:", i.name, i.type, file=_s.stderr)
+            elem = getattr(meta, "element_type", None)
+            return self._load_elem(base.ptr, i, elem)
         if isinstance(base, ThrPartition):
             j = int(_const_index(self.eval(slice_node)))
             from . import builtins as _b
@@ -278,6 +379,14 @@ class KernelInterpreter:
             return base.slots.get(int(_const_index(self.eval(slice_node))))
         if isinstance(base, SSA):
             return self._load_elem(base, self.eval(slice_node))
+        if isinstance(base, (list, tuple)):
+            return base[int(_const_index(self.eval(slice_node)))]
+        from . import builtins as _bb
+
+        if isinstance(base, _bb.SmemArray):
+            i = self.eval(slice_node)
+            p = self.emitter.gep_smem(base.ptr, i)
+            return self.emitter.ssa("f16", f"llvm.load {p.name} : !llvm.ptr<3> -> f16")
         raise InterpError(f"subscript on {type(base)} unsupported")
 
     def _single_dynamic_index(self, slice_node):
@@ -316,24 +425,33 @@ class KernelInterpreter:
         return _single_ssa(self.eval(slice_node))
 
     # -- raw pointer element access (M2 tensors-as-pointers ABI) -------------
-    def _load_elem(self, base: SSA, idx):
+    def _load_elem(self, base: SSA, idx, elem=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript load needs a pointer, got {base!r}"
         p = self.emitter.gep(base, idx)
+        if getattr(elem, "name", "") == "f16":
+            return self.emitter.load_gmem_f16(p)
         return self.emitter.load_f32(p)
 
-    def _store_elem(self, base: SSA, idx, val):
+    def _store_elem(self, base: SSA, idx, val, elem=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript store needs a pointer, got {base!r}"
         p = self.emitter.gep(base, idx)
         if isinstance(val, (int, float)):
-            val = self.emitter.ssa("f32", f"arith.constant {float(val)} : f32", "float32")
+            ty = "f16" if getattr(elem, "name", "") == "f16" else "f32"
+            v = float(val)
+            val = self.emitter.ssa(ty, f"arith.constant {v if ty == 'f32' else v} : {ty}")
+        if getattr(elem, "name", "") == "f16":
+            self.emitter.store_smem_f16(val, p) if p.type.startswith("!llvm.ptr<3") else \
+                self.emitter.raw(f"llvm.store {val.name}, {p.name} : f16, !llvm.ptr<1>")
+            return
         self.emitter.store_f32(val, p)
 
     def binop(self, op, lhs, rhs):
         py_only = isinstance(lhs, (int, float)) and isinstance(rhs, (int, float))
         arith = {
             ast.Add: "arith.addi", ast.Sub: "arith.subi", ast.Mult: "arith.muli",
+            ast.FloorDiv: "arith.divsi", ast.Mod: "arith.remsi",
         }.get(type(op))
         if arith is None:
             if isinstance(op, ast.Add) and not py_only:

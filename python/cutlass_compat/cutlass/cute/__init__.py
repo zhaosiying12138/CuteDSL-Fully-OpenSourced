@@ -132,3 +132,46 @@ def elem_less(coord, shape):
     from self_cutedsl.frontend import builtins
 
     return builtins.elem_less(coord, shape)
+
+
+# --------------------------------------------------------------- smem + mma
+def make_smem_array(name, count, element=None):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.make_smem_array(name, count, element)
+
+
+def ldmatrix(smem, row_ssa, col_elems=0, num=4, trans=False):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.ldmatrix(smem, row_ssa, col_elems, num, trans)
+
+
+def make_tiled_mma(atom, atom_layout=None):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.make_tiled_mma(atom, atom_layout)
+
+
+def gemm(tiled_mma, acc, a_frag, b_frag):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.gemm(tiled_mma, acc, a_frag, b_frag)
+
+
+def extract_frag(ld_res, idx):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.extract_frag(ld_res, idx)
+
+
+def zero_f32():
+    from self_cutedsl.frontend.builtins import _emitter
+
+    return _emitter().ssa("f32", "arith.constant 0.0 : f32", "float32")
+
+
+def sync_threads():
+    from self_cutedsl.frontend.builtins import _emitter
+
+    _emitter().barrier()

@@ -269,3 +269,50 @@ def _flat2(x):
 # expose the thread index SSA recorded by the interpreter
 def _get_tidx():
     return _active.tidx_ssa
+
+
+# ------------------------------------------------------------------ smem + mma
+class SmemArray:
+    """cute.make_smem_array(name, count, element) — shared-memory buffer."""
+
+    def __init__(self, ptr, count, elem):
+        self.ptr = ptr          # SSA !llvm.ptr<3>
+        self.count = count
+        self.elem = elem        # ElementType
+
+
+def make_smem_array(name: str, count: int, element=None):
+    from .meta import F16
+
+    e = _emitter()
+    elem = element or F16
+    e.smem_global_declare(f"{name}", int(count), "f16")
+    ptr = e.smem_ptr(name)
+    return SmemArray(ptr, int(count), elem)
+
+
+def ldmatrix(smem: SmemArray, row_ssa, col_elems: int = 0, num: int = 4, trans: bool = False):
+    """ldmatrix from smem at element offset (dynamic row base OK)."""
+    e = _emitter()
+    off = row_ssa
+    p = e.gep_smem(smem.ptr, off)
+    return e.ldmatrix(p, num, trans)
+
+
+def make_tiled_mma(atom, atom_layout=None):
+    from .tiled import TiledMma
+
+    return TiledMma(atom)
+
+
+def gemm(tiled_mma, acc, a_frag, b_frag):
+    """cute.gemm(mma, acc, aFrags, bFrags) -> new acc (list of 4 SSA f32)."""
+    e = _emitter()
+    a = [e.bitcast_f16x2(x) for x in a_frag]
+    b = [e.bitcast_f16x2(x) for x in b_frag]
+    return e.mma_f16(a, b, acc)
+
+
+def extract_frag(ld_res, idx: int):
+    e = _emitter()
+    return e.extract_i32(ld_res, idx)

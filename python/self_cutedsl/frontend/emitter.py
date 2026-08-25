@@ -33,6 +33,7 @@ class KernelEmitter:
         self._depth = 1  # inside gpu.func
         self._next_id = 0
         self.params: list[tuple[str, str]] = []  # (mlir_name, type)
+        self.smem_globals: list[str] = []         # module-level shared decls
 
     # -- plumbing ----------------------------------------------------------
     def raw(self, line: str) -> None:
@@ -60,12 +61,36 @@ class KernelEmitter:
         self._depth -= 1
         self.raw("}")
 
-    def open_for(self, lb: SSA, ub: SSA, step: SSA) -> SSA:
+    def open_for(self, lb: SSA, ub: SSA, step: SSA, iter_args=None) -> tuple[SSA, list[SSA]]:
+        """iter_args: list of SSA initial values (non-index loop-carried)."""
         iv = SSA("index", self._next_id, "index")
         self._next_id += 1
-        self.raw(f"scf.for {iv.name} = {lb.name} to {ub.name} step {step.name} {{")
+        args = []
+        results = []
+        if iter_args:
+            decls, res_names = [], []
+            for init in iter_args:
+                a = SSA(init.type, self._next_id, init.dtype_name)
+                self._next_id += 1
+                r = SSA(init.type, self._next_id, init.dtype_name)
+                self._next_id += 1
+                decls.append(f"{a.name} = {init.name}")
+                res_names.append(r.name)
+                args.append(a)
+                results.append(r)
+            tys = ", ".join(a.type for a in args)
+            header = (", ".join(res_names) + " = "
+                      f"scf.for {iv.name} = {lb.name} to {ub.name} step {step.name}"
+                      + " iter_args(" + ", ".join(decls) + f") -> ({tys})")
+        else:
+            header = f"scf.for {iv.name} = {lb.name} to {ub.name} step {step.name}"
+        self.raw(header + " {")
         self._depth += 1
-        return iv
+        return iv, args, results
+
+    def yield_for(self, vals: list[SSA]) -> None:
+        tys = ", ".join(v.type for v in vals)
+        self.raw(f"scf.yield {', '.join(v.name for v in vals)} : {tys}")
 
     def close_for(self) -> None:
         self._depth -= 1
@@ -153,6 +178,80 @@ class KernelEmitter:
         else:
             self.raw(f'gpu.printf "{escaped}"')
 
+    # -- shared memory ---------------------------------------------------------
+    def smem_global_declare(self, name: str, elems: int, elem_mlir: str = "f16",
+                            align: int = 16) -> None:
+        line = (f"    llvm.mlir.global internal @{name}() "
+                f"{{addr_space = 3 : i32, alignment = {align} : i64}} "
+                f": !llvm.array<{elems} x {elem_mlir}>")
+        if not any(name in g for g in self.smem_globals):
+            self.smem_globals.append(line)
+
+    def smem_ptr(self, name: str, elem_mlir: str = "f16") -> SSA:
+        return self.ssa(f"!llvm.ptr<3>",
+                        f"llvm.mlir.addressof @{name} : !llvm.ptr<3>")
+
+    def barrier(self) -> None:
+        self.raw("gpu.barrier")
+
+    # -- ldmatrix / mma ----------------------------------------------------------
+    def ldmatrix(self, ptr: SSA, num: int, trans: bool):
+        layout = "col" if trans else "row"
+        n = num
+        if n == 1:
+            ty = "i32"
+        elif n == 2:
+            ty = "!llvm.struct<(i32, i32)>"
+        else:
+            ty = "!llvm.struct<(i32, i32, i32, i32)>"
+            n = 4
+        return self.ssa(ty, f"nvvm.ldmatrix {ptr.name} {{num = {n} : i32, "
+                            f"layout = #nvvm.mma_layout<{layout}>, "
+                            f"eltType = #nvvm.ld_st_matrix_elt_type<b16>, "
+                            f"shape = #nvvm.ld_st_matrix_shape<m = 8, n = 8>}} "
+                            f": (!llvm.ptr<3>) -> {ty}")
+
+    def mma_f16(self, a: list, b: list, c: list):
+        """One mma.sync m16n8k16 f16->f32. a: 4 SSA (i32 or vector<2xf16>),
+        b: 2 SSA, c: 4 SSA f32. Returns 4 SSA f32."""
+        aops = ", ".join(x.name for x in a)
+        bops = ", ".join(x.name for x in b)
+        cops = ", ".join(x.name for x in c)
+        r = self.ssa("!llvm.struct<(f32, f32, f32, f32)>",
+                     f"nvvm.mma.sync A[{aops}] B[{bops}] C[{cops}] "
+                     f"{{layoutA = #nvvm.mma_layout<row>, layoutB = #nvvm.mma_layout<col>, "
+                     f"shape = #nvvm.shape<m = 16, n = 8, k = 16>}} "
+                     f": (vector<2xf16>, vector<2xf16>, f32) -> !llvm.struct<(f32, f32, f32, f32)>")
+        outs = []
+        for i in range(4):
+            outs.append(self.ssa("f32",
+                       f"llvm.extractvalue {r.name}[{i}] : !llvm.struct<(f32, f32, f32, f32)>"))
+        return outs
+
+    def extract_i32(self, struct: SSA, idx: int) -> SSA:
+        n = _struct_len(struct.type)
+        inner = ", ".join(["i32"] * n)
+        return self.ssa("i32",
+                        f"llvm.extractvalue {struct.name}[{idx}] : !llvm.struct<({inner})>")
+
+    def bitcast_f16x2(self, v: SSA) -> SSA:
+        return self.ssa("vector<2xf16>", f"llvm.bitcast {v.name} : i32 to vector<2xf16>")
+
+    def gep_smem(self, base: SSA, offset: SSA, elem: str = "f16") -> SSA:
+        off = self.index_to_i64(offset) if getattr(offset, "type", "") in ("index", "i32") else offset
+        return self.ssa("!llvm.ptr<3>",
+                        f"llvm.getelementptr {base.name}[{off.name}] "
+                        f": (!llvm.ptr<3>, i64) -> !llvm.ptr<3>, {elem}")
+
+    def store_smem_f16(self, v: SSA, p: SSA) -> None:
+        self.raw(f"llvm.store {v.name}, {p.name} : f16, !llvm.ptr<3>")
+
+    def load_gmem_f16(self, p: SSA) -> SSA:
+        return self.ssa("f16", f"llvm.load {p.name} : !llvm.ptr<1> -> f16")
+
+    def store_gmem_f32(self, v: SSA, p: SSA) -> None:
+        self.raw(f"llvm.store {v.name}, {p.name} : f32, !llvm.ptr<1>")
+
     # -- output ---------------------------------------------------------------
     def module_text(self) -> str:
         # param SSAs are pre-allocated as %v{i} by the interpreter; keep names in sync
@@ -160,6 +259,7 @@ class KernelEmitter:
         lines = [
             "module attributes {gpu.container_module} {",
             f"  gpu.module @{self.name}_module {{",
+            *self.smem_globals,
             f"    gpu.func @{self.name}({params}) kernel {{",
             *self._lines,
             "      gpu.return",
@@ -174,3 +274,6 @@ def width_of(vec: SSA) -> int:
     # "vector<4xf32>" -> 4
     t = vec.type
     return int(t.split("<")[1].split("x")[0])
+
+def _struct_len(ty: str) -> int:
+    return ty.count("i32")

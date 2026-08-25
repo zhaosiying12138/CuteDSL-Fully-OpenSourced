@@ -95,3 +95,17 @@ class Fragment:
 
     def __init__(self, count: int):
         self.count = count
+
+
+class MmaF16BF16Op:
+    """SM120/SM80 warp mma.sync m16n8k16 f16/bf16 atom marker."""
+
+    def __init__(self, acc_dtype=None):
+        self.acc_dtype = acc_dtype
+
+
+class TiledMma:
+    def __init__(self, atom):
+        self.atom = atom
+        # m16n8k16 atom geometry
+        self.shape_mnk = (16, 8, 16)
