@@ -1,0 +1,45 @@
+# --- Implementation notes: NEVER commit (for future blog) ---
+DEVLOG.md
+DEVLOG/
+notes/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.egg
+.venv*/
+venv*/
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# --- Build artifacts ---
+*.o
+*.a
+*.so
+*.dylib
+build-*/
+out/
+.cache/
+
+# --- CUDA / GPU artifacts (keep curated evidence under artifacts/reference) ---
+*.cubin
+*.fatbin
+*.nvvm
+*.ptx
+!tests/ptx/**/*.ptx
+!artifacts/ptx/**/*.ptx
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# --- Large scratch ---
+scratch/
+tmp/
+.zcode/
