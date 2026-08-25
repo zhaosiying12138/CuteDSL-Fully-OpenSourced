@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-08-26T01:26:54",
+  "repeats": 3,
+  "cases": {
+    "elementwise-1024x1024": {
+      "official": {
+        "status": "PASS",
+        "exec_ms": 0.0407,
+        "throughput_gb_s": 309.49,
+        "verified": true,
+        "wall_s": 6.2,
+        "exec_ms_median": 0.078,
+        "throughput_gb_s_median": 161.47
+      },
+      "self": {
+        "status": "PASS",
+        "exec_ms": 0.0489,
+        "throughput_gb_s": 257.33,
+        "verified": true,
+        "wall_s": 12.5,
+        "exec_ms_median": 0.034,
+        "throughput_gb_s_median": 368.79
+      }
+    },
+    "elementwise-2048x2048": {
+      "official": {
+        "status": "PASS",
+        "exec_ms": 0.0654,
+        "throughput_gb_s": 769.29,
+        "verified": true,
+        "wall_s": 17.6,
+        "exec_ms_median": 0.064,
+        "throughput_gb_s_median": 785.15
+      },
+      "self": {
+        "status": "PASS",
+        "exec_ms": 0.0637,
+        "throughput_gb_s": 789.66,
+        "verified": true,
+        "wall_s": 6.4,
+        "exec_ms_median": 0.064,
+        "throughput_gb_s_median": 789.66
+      }
+    },
+    "elementwise-8192x8192": {
+      "official": {
+        "status": "PASS",
+        "exec_ms": 1.1138,
+        "throughput_gb_s": 723.05,
+        "verified": true,
+        "wall_s": 11.5,
+        "exec_ms_median": 1.111,
+        "throughput_gb_s_median": 724.8
+      },
+      "self": {
+        "status": "PASS",
+        "exec_ms": 1.0991,
+        "throughput_gb_s": 732.67,
+        "verified": true,
+        "wall_s": 5.8,
+        "exec_ms_median": 1.099,
+        "throughput_gb_s_median": 732.47
+      }
+    }
+  }
+}
