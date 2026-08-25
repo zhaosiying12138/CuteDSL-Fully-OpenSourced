@@ -122,7 +122,20 @@ baseline evidence in `artifacts/reference/results.json`).
 | Performance parity with official compiler | 2048²: 790 vs 785 GB/s (101%); 8192²: 732 vs 725 (101%); 1024²: 369 vs 161 (228%) — `artifacts/perf/` |
 | Real warp MMA: ldmatrix.x4/x2.trans + mma.sync m16n8k16 golden (raw MLIR) | `tests/runtime/sm120/test_mma_m16n8k16.py` |
 | Frontend warp GEMM via @cute.jit (SMEM+ldmatrix+mma loop-carried K) golden, 3 shapes | `tests/python/test_gemm_frontend.py` |
-| PTX fingerprints: ld.global.v4, ldmatrix, mma.sync.aligned.m16n8k16 | test asserts |
+| TMA roundtrip (G2S + mbarrier complete_tx + S2G) golden — raw MLIR and @cute.jit frontend | `tests/runtime/sm120/test_tma_g2s_s2g.py`, `tests/python/test_tma_frontend.py` |
+| 2-stage TMA pipeline with phase-parity rollover golden (n_tiles 2/4/7, OOB tiles) | `tests/runtime/sm120/test_tma_pipeline.py` |
+| setmaxnreg inc/dec + named barriers verified on 5090 | scratch/verify_smr.py runbook |
+| PTX fingerprints: ld.global.v4, ldmatrix, mma.sync.aligned.m16n8k16, cp.async.bulk.tensor, mbarrier.* | test asserts |
+
+### Flagship status (dense_gemm / blockscaled)
+
+**Not yet runnable unmodified.** Every hardware primitive they use is
+verified; the remaining gap is the CuTe object-model library layer
+(dynamic layout algebra in-kernel, TMA atoms/partitioning, TiledMma
+partitioning, PipelineTmaAsync driver, tile scheduler). Full inventory:
+`compat/sm120_flagship_gap.md`. Self GEMM perf today: 1156 GFLOP/s
+(512³) vs cuBLAS 4099 and official TMA GEMM 43,090 (4096³) — drivers of
+the gap are no-TMA/1-warp/no-pipeline, i.e. exactly the M6/M7 work.
 
 Toolchain frozen in `compat/sm120_toolchain.lock.yaml`: pinned LLVM `23a60f15`
 (5193/5193 targets), cutlass_compiler @ `7107b055` with **check-cute 236/236
