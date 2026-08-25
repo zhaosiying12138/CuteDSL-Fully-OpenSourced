@@ -43,3 +43,4 @@ out/
 scratch/
 tmp/
 .zcode/
+third_party/flashinfer-src/

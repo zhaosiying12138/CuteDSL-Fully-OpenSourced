@@ -1,0 +1,31 @@
+# sm120_toolchain.lock.yaml — frozen toolchain versions for reproducibility.
+# Every field is machine-verified by tools/verify_open_stack.py where possible.
+
+# --- vendored / built-from-source (committed or fetched by tools/fetch_third_party.sh) ---
+cutlass_repo: git@github.com:NVIDIA/cutlass.git
+cutlass_commit: 7107b05535f8977f5ecb9d01ee203205b1fd9bc4  # "[CuTeDSL] Fix export_to_c shape slot width for 64-bit dynamic dims (#3448)"
+cutlass_compiler_llvm_commit: 23a60f15f2fcafcf67b95b0a035053579958b732
+
+flashinfer_repo: git@github.com:flashinfer-ai/flashinfer.git
+flashinfer_commit: 9d33a28e8321b2da099e7106fbc527ab3bca904c
+
+# --- reference (official) environment — the ONLY place proprietary wheels may exist ---
+reference_env:
+  python: "3.12.14"
+  nvidia_cutlass_dsl: "4.7.0"
+  torch: "2.13.0+cu130"
+  driver_version: "610.53"
+  gpu_name: "NVIDIA GeForce RTX 5090 Laptop GPU"
+  compute_capability: "12.0"
+
+# --- self environment ---
+self_env:
+  python: "3.12.14"
+  cuda_python: "13.3.1"
+  torch: "2.13.0"
+
+# --- host toolchain ---
+host:
+  cmake: "4.2.3"
+  ninja: "1.13.2"
+  cuda_toolkit: "/usr/local/cuda-13.3"
