@@ -71,6 +71,20 @@ class KernelEmitter:
         self._depth -= 1
         self.raw("}")
 
+    # -- index arithmetic (for partition pointer math) ------------------------
+    def idx_const(self, v: int) -> SSA:
+        return self.ssa("index", f"arith.constant {int(v)} : index")
+
+    def idx_binop(self, op: str, a: SSA, b) -> SSA:
+        if not isinstance(b, SSA):
+            b = self.idx_const(int(b))
+        assert a.type == "index" and b.type == "index"
+        return self.ssa("index", f"{op} {a.name}, {b.name} : index")
+
+    def cmpi_slt_const(self, a: SSA, bound: int) -> SSA:
+        c = self.idx_const(bound)
+        return self.ssa("i1", f"arith.cmpi slt, {a.name}, {c.name} : index")
+
     # -- memory (raw pointer ABI; tensors lower to !llvm.ptr<1>) --------------
     def index_to_i64(self, v: SSA) -> SSA:
         if v.type == "i64":

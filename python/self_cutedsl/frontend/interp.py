@@ -43,11 +43,20 @@ class KernelInterpreter:
             val = arg_values.get(p.name, p.default)
             if p.kind == "constexpr":
                 self.env[p.name] = _unwrap_constexpr(val)
+            elif p.kind == "tensor" and _is_coord_meta(val):
+                # coordinate tensors are compile-time meta (no device pointer)
+                self.env[p.name] = val
+                continue
             elif p.kind == "tensor":
+                from .kernel_objects import KernelTensor
+
                 mlir_ty = "!llvm.ptr<1>"
                 self.emitter.params.append((p.name, mlir_ty))
-                self.env[p.name] = SSA(mlir_ty, dyn_idx, "ptr")
+                ptr = SSA(mlir_ty, dyn_idx, "ptr")
                 dyn_idx += 1
+                meta = getattr(val, "tiled", None) or val
+                elem = getattr(getattr(meta, "base", meta), "element_type", None)
+                self.env[p.name] = KernelTensor(ptr, meta, elem)
                 continue
             else:
                 mlir_ty = p.dtype.mlir if p.dtype else "i32"
@@ -56,12 +65,10 @@ class KernelInterpreter:
                 # dynamic params are already %pN in the signature; alias them
                 self.env[p.name] = ssa
                 dyn_idx += 1
-        # renumber ssa ids after params
+        # renumber ssa ids after params (each branch above already bound env)
         self.emitter._next_id = dyn_idx
-        # bind param SSAs to signature names
-        for i, (pname, _) in enumerate(self.emitter.params):
-            self.env[pname] = SSA(self.emitter.params[i][1], i,
-                                  getattr(self.env.get(pname), "dtype_name", "int32"))
+
+        self.tidx_ssa = None  # recorded by cute.arch.thread_idx()
 
         self.tree = ast.parse(textwrap.dedent(_get_source(fn)))
         self.body = self.tree.body[0].body  # FunctionDef body
@@ -76,10 +83,20 @@ class KernelInterpreter:
     def exec_stmt(self, node: ast.stmt) -> None:
         if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Subscript):
             tgt = node.targets[0]
-            ptr = self.eval(tgt.value)
-            idx = self.eval(tgt.slice) if not isinstance(tgt.slice, ast.Tuple) else self.eval(tgt.slice)
-            val = self.eval(node.value)
-            self._store_elem(ptr, idx, val)
+            base = self.eval(tgt.value)
+            from .kernel_objects import Fragment as _Frag
+
+            if isinstance(base, _Frag):
+                idx = self.eval(tgt.slice)
+                val = self.eval(node.value)
+                base.slots[int(_const_index(idx))] = val
+            else:
+                from .kernel_objects import KernelTensor
+
+                idx = self.eval(tgt.slice) if not isinstance(tgt.slice, ast.Tuple) else self.eval(tgt.slice)
+                val = self.eval(node.value)
+                ptr = base.ptr if isinstance(base, KernelTensor) else base
+                self._store_elem(ptr, idx, val)
         elif isinstance(node, ast.Assign):
             value = self.eval(node.value)
             self.assign(node.targets[0], value)
@@ -216,9 +233,87 @@ class KernelInterpreter:
             return getattr(base, node.attr)
         if isinstance(node, ast.Subscript):
             base = self.eval(node.value)
-            idx = self.eval(node.slice) if not isinstance(node.slice, ast.Tuple) else self.eval(node.slice)
-            return self._load_elem(base, idx)
+            return self._subscript(base, node.slice)
+        if isinstance(node, ast.JoinedStr):
+            parts = []
+            for v in node.values:
+                if isinstance(v, ast.FormattedValue):
+                    parts.append(_fmt(self.eval(v.value)))
+                else:
+                    parts.append(v.value)
+            return "".join(parts)
         raise InterpError(f"unsupported expression {ast.dump(node)[:80]}")
+
+    def _subscript(self, base, slice_node):
+        """Dispatch t[...]: tile slicing, partition coords, fragment slots,
+        flat pointer access."""
+        from .kernel_objects import BlockTile, CoordPair, Fragment, KernelTensor, ThrPartition
+        from .meta import TiledCoordinateMeta, TiledTensorMeta
+
+        if isinstance(base, TiledCoordinateMeta):
+            idx = self._single_dynamic_index(slice_node)
+            if idx is not None:
+                return BlockTile(None, base, idx, is_coord=True)
+            raise InterpError("coord tensor slice needs a block index")
+        if isinstance(base, KernelTensor):
+            from .meta import TiledTensorMeta
+
+            meta = base.meta
+            is_tiled = isinstance(meta, (TiledTensorMeta, TiledCoordinateMeta))
+            idx = self._single_dynamic_index(slice_node)
+            if is_tiled and idx is not None:
+                # ((None,None), bidx) style hierarchical block slice
+                if isinstance(meta, TiledCoordinateMeta):
+                    return BlockTile(None, meta, idx, is_coord=True)
+                return BlockTile(base.ptr, meta, idx)
+            # flat element access (1-D untiled tensors, M2 path)
+            i = self.eval(slice_node)
+            return self._load_elem(base.ptr, i)
+        if isinstance(base, ThrPartition):
+            j = int(_const_index(self.eval(slice_node)))
+            from . import builtins as _b
+
+            return _b._coord_value(self.emitter, base, j)
+        if isinstance(base, Fragment):
+            return base.slots.get(int(_const_index(self.eval(slice_node))))
+        if isinstance(base, SSA):
+            return self._load_elem(base, self.eval(slice_node))
+        raise InterpError(f"subscript on {type(base)} unsupported")
+
+    def _single_dynamic_index(self, slice_node):
+        """From ((None,None), bidx) extract the single non-None SSA index.
+
+        Handles both literal tuple slices and names bound to tuple values.
+        """
+        def walk_node(n):
+            if isinstance(n, ast.Tuple):
+                for e in n.elts:
+                    r = walk_node(e)
+                    if r is not None:
+                        return r
+                return None
+            if isinstance(n, ast.Constant) and n.value is None:
+                return None
+            v = self.eval(n)
+            return _single_ssa(v)
+
+        def _single_ssa(v):
+            if isinstance(v, SSA):
+                return v
+            if isinstance(v, (tuple, list)):
+                found = None
+                for x in v:
+                    r = _single_ssa(x)
+                    if r is not None:
+                        if found is not None:
+                            return None  # more than one dynamic index
+                        found = r
+                return found
+            return None
+
+        if isinstance(slice_node, ast.Tuple):
+            return walk_node(slice_node)
+        return _single_ssa(self.eval(slice_node))
 
     # -- raw pointer element access (M2 tensors-as-pointers ABI) -------------
     def _load_elem(self, base: SSA, idx):
@@ -247,6 +342,15 @@ class KernelInterpreter:
                 if py_only:
                     return _py_binop(op, lhs, rhs)
                 raise InterpError(f"unsupported binop {op}")
+        from .kernel_objects import FragmentView as _FV
+
+        if isinstance(lhs, _FV) and isinstance(rhs, _FV):
+            if not isinstance(op, ast.Add):
+                raise InterpError("only FragmentView + FragmentView supported")
+            vals = []
+            for x, y in zip(lhs.values, rhs.values):
+                vals.append(self.emitter.ssa(x.type, f"arith.addf {x.name}, {y.name} : {x.type}"))
+            return _FV(vals)
         if py_only:
             return _py_binop(op, lhs, rhs)
         a, b = self._pair(lhs, rhs)
@@ -273,7 +377,8 @@ class KernelInterpreter:
     def call(self, node: ast.Call):
         func = self.eval(node.func)
         args = [self.eval(a) for a in node.args]
-        return func(*args) if not isinstance(func, _DelayedCall) else func(*args)
+        kwargs = {kw.arg: self.eval(kw.value) for kw in node.keywords if kw.arg}
+        return func(*args, **kwargs)
 
     # --------------------------------------------------------------- helpers
     def to_i1(self, v) -> SSA:
@@ -349,3 +454,24 @@ def _py_compare(op, a, b):
         ast.Eq: _op.eq, ast.NotEq: _op.ne, ast.Lt: _op.lt,
         ast.LtE: _op.le, ast.Gt: _op.gt, ast.GtE: _op.ge,
     }[type(op)](a, b)
+
+
+def _is_coord_meta(v) -> bool:
+    from .meta import CoordinateTensorMeta, TiledCoordinateMeta
+
+    b = getattr(v, "base", v)
+    return isinstance(v, (CoordinateTensorMeta, TiledCoordinateMeta)) or \
+        isinstance(b, CoordinateTensorMeta)
+
+
+def _const_index(v) -> int:
+    """constexpr index (python int or Constexpr-wrapped)."""
+    if isinstance(v, SSA):
+        raise InterpError("value index must be compile-time constant")
+    return int(getattr(v, "value", v))
+
+
+def _fmt(v) -> str:
+    if isinstance(v, SSA):
+        return v.name
+    return str(v)

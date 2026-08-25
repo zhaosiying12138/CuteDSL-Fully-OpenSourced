@@ -23,13 +23,10 @@ def make_layout_tv(thr_layout: CuteLayout, val_layout: CuteLayout):
     if len(t_shape) != 2 or len(v_shape) != 2:
         raise NotImplementedError("make_layout_tv supports rank-2 thr/val for now")
     tiler = (t_shape[0] * v_shape[0], t_shape[1] * v_shape[1])
-    # tv layout: ((thr_v, thr_rest), (val, rest)) — simplified canonical form:
-    # threads cover thr_layout, values val_layout within each thread's tile
-    tv = CuteLayout((t_shape[0], t_shape[1], v_shape[0], v_shape[1]),
-                    (v_shape[0] * v_shape[1] * t_shape[1],
-                     v_shape[0] * v_shape[1],
-                     v_shape[1],
-                     1))
+    # canonical tv layout: ((thr),(val)) — mode 0 = threads, mode 1 = values
+    tv = CuteLayout(((t_shape[0], t_shape[1]), (v_shape[0], v_shape[1])),
+                    ((v_shape[0] * v_shape[1] * t_shape[1], v_shape[0] * v_shape[1]),
+                     (v_shape[1], 1)))
     return tiler, tv
 
 
@@ -55,43 +52,27 @@ class TiledCopy:
         v_shape = _flatten(val_layout.shape)
         self.tile_shape = (t_shape[0] * v_shape[0], t_shape[1] * v_shape[1])
 
-    def get_slice(self, tidx: int) -> "ThreadSlice":
-        return ThreadSlice(self, int(tidx))
+    def get_slice(self, tidx) -> "ThreadSlice":
+        from . import builtins as _b
 
-    def partition_S(self, tile) -> "PartitionedTile":
-        raise NotImplementedError("partition_S is driven by the interpreter")
+        _b._active.tidx_ssa = tidx  # remember for partition math
+        return ThreadSlice(self, tidx)
 
 
 class ThreadSlice:
-    def __init__(self, tiled_copy: TiledCopy, tidx: int):
+    def __init__(self, tiled_copy: TiledCopy, tidx):
         self.tc = tiled_copy
         self.tidx = tidx
 
-    def partition_S(self, tile) -> "PartitionedTile":
-        return PartitionedTile(self.tc, self.tidx, tile, is_source=True)
+    def partition_S(self, tile):
+        from . import builtins as _b
 
-    def partition_D(self, tile) -> "PartitionedTile":
-        return PartitionedTile(self.tc, self.tidx, tile, is_source=False)
+        return _b.partition_for_thread(self.tc, tile)
 
+    def partition_D(self, tile):
+        from . import builtins as _b
 
-class PartitionedTile:
-    """A per-thread view of a tile: base (row, col) + the value offsets."""
-
-    def __init__(self, tc: TiledCopy, tidx: int, tile, is_source: bool):
-        self.tc = tc
-        self.tidx = tidx
-        self.tile = tile  # interpreter-side tile object (tensor + origin)
-        self.is_source = is_source
-
-    def thread_origin(self) -> tuple[int, int]:
-        t_shape = _flatten(self.tc.thr_layout.shape)
-        v_shape = _flatten(self.tc.val_layout.shape)
-        ty, tx = divmod(self.tidx, t_shape[1])
-        return (ty * v_shape[0], tx * v_shape[1])
-
-    def value_offsets(self) -> list[tuple[int, int]]:
-        v_shape = _flatten(self.tc.val_layout.shape)
-        return [(vy, vx) for vy in range(v_shape[0]) for vx in range(v_shape[1])]
+        return _b.partition_for_thread(self.tc, tile)
 
 
 def make_copy_atom(op, element_type, **kwargs) -> CopyAtom:
@@ -103,9 +84,10 @@ def make_tiled_copy_tv(atom: CopyAtom, thr_layout: CuteLayout,
     return TiledCopy(atom, thr_layout, val_layout)
 
 
-def make_fragment_like(partitioned, count: int | None = None) -> "Fragment":
-    n = count if count is not None else partitioned.tc.vals_per_thread
-    return Fragment(n)
+def make_fragment_like(partitioned, count: int | None = None):
+    from . import builtins as _b
+
+    return _b.make_fragment_like(partitioned)
 
 
 class Fragment:

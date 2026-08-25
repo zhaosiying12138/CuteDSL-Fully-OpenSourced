@@ -8,6 +8,18 @@ class _DType:
     def __init__(self, name: str, mlir: str, bits: int):
         self.name, self.mlir, self.bits = name, mlir, bits
 
+    @property
+    def is_integer(self) -> bool:
+        return self.name.startswith(("Int", "Uint", "UInt"))
+
+    @property
+    def is_float(self) -> bool:
+        return self.name.startswith("Float")
+
+    @property
+    def width(self) -> int:
+        return self.bits
+
     def __repr__(self):
         return self.name
 
@@ -36,6 +48,7 @@ Float8E8M0FNU = _DType("Float8E8M0FNU", "!cute.f8e8m0fnu", 8)
 Float4E2M1FN = _DType("Float4E2M1FN", "!cute.f4e2m1fn", 4)
 
 Numeric = _DType("Numeric", "i32", 32)
+Boolean = _DType("Boolean", "i1", 1)
 
 _BY_NAME = {d.name: d for d in
             (Int32, Int64, UInt32, Float32, Float16, BFloat16,

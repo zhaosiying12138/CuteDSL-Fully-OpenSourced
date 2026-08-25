@@ -99,6 +99,10 @@ class DriverJit:
     def synchronize(self) -> None:
         _check(cu.cuCtxSynchronize(), "cuCtxSynchronize")
 
+    @staticmethod
+    def synchronize_ctx() -> None:
+        _check(cu.cuCtxSynchronize(), "cuCtxSynchronize")
+
 
 def _pack_args(manifest: LaunchManifest, args: Sequence[Any]) -> ctypes.Array:
     """Pack kernel args per manifest signature into a cuLaunchKernel arg buffer."""
