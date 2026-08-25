@@ -43,6 +43,12 @@ class KernelInterpreter:
             val = arg_values.get(p.name, p.default)
             if p.kind == "constexpr":
                 self.env[p.name] = _unwrap_constexpr(val)
+            elif p.kind == "tensor":
+                mlir_ty = "!llvm.ptr<1>"
+                self.emitter.params.append((p.name, mlir_ty))
+                self.env[p.name] = SSA(mlir_ty, dyn_idx, "ptr")
+                dyn_idx += 1
+                continue
             else:
                 mlir_ty = p.dtype.mlir if p.dtype else "i32"
                 self.emitter.params.append((p.name, mlir_ty))
@@ -68,7 +74,13 @@ class KernelInterpreter:
 
     # --------------------------------------------------------------- stmts
     def exec_stmt(self, node: ast.stmt) -> None:
-        if isinstance(node, ast.Assign):
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Subscript):
+            tgt = node.targets[0]
+            ptr = self.eval(tgt.value)
+            idx = self.eval(tgt.slice) if not isinstance(tgt.slice, ast.Tuple) else self.eval(tgt.slice)
+            val = self.eval(node.value)
+            self._store_elem(ptr, idx, val)
+        elif isinstance(node, ast.Assign):
             value = self.eval(node.value)
             self.assign(node.targets[0], value)
         elif isinstance(node, ast.AugAssign):
@@ -79,6 +91,8 @@ class KernelInterpreter:
             self.eval(node.value)
         elif isinstance(node, ast.If):
             self.exec_if(node)
+        elif isinstance(node, ast.For):
+            self.exec_for(node)
         elif isinstance(node, (ast.Pass,)):
             pass
         elif isinstance(node, ast.Return):
@@ -105,6 +119,42 @@ class KernelInterpreter:
             else:
                 for s in node.orelse:
                     self.exec_stmt(s)
+
+    def exec_for(self, node: ast.For) -> None:
+        # only `for x in range(...)` supported
+        assert isinstance(node.iter, ast.Call) and getattr(node.iter.func, "id", "") == "range", \
+            "only range() loops supported"
+        iter_args = [self.eval(a) for a in node.iter.args]
+        if all(isinstance(a, int) for a in iter_args):
+            # constexpr loop: unroll in Python (mirrors official partial eval)
+            lo, hi, st = (iter_args + [None, None])[:3]
+            rng = range(lo, hi if hi is not None else lo, st if st is not None else 1)
+            # rebind the target as constexpr per iteration
+            for i in rng:
+                self.assign(node.target, i)
+                for s in node.body:
+                    self.exec_stmt(s)
+            return
+        # dynamic bounds -> scf.for
+        args = iter_args + [1]
+        lb = self._to_index(args[0]) if not isinstance(args[0], int) else self._index_const(args[0])
+        ub = self._to_index(args[1]) if not isinstance(args[1], int) else self._index_const(args[1])
+        st = self._to_index(args[2]) if not isinstance(args[2], int) else self._index_const(args[2])
+        iv = self.emitter.open_for(lb, ub, st)
+        self.assign(node.target, iv)
+        for s in node.body:
+            self.exec_stmt(s)
+        self.emitter.close_for()
+
+    def _to_index(self, v) -> SSA:
+        if isinstance(v, SSA):
+            if v.type == "index":
+                return v
+            return self.emitter.ssa("index", f"arith.index_cast {v.name} : {v.type} to index")
+        return self._index_const(int(v))
+
+    def _index_const(self, v: int) -> SSA:
+        return self.emitter.ssa("index", f"arith.constant {int(v)} : index")
 
     def assign(self, target: ast.expr, value) -> None:
         if isinstance(target, ast.Tuple):
@@ -164,7 +214,26 @@ class KernelInterpreter:
         if isinstance(node, ast.Attribute):
             base = self.eval(node.value)
             return getattr(base, node.attr)
+        if isinstance(node, ast.Subscript):
+            base = self.eval(node.value)
+            idx = self.eval(node.slice) if not isinstance(node.slice, ast.Tuple) else self.eval(node.slice)
+            return self._load_elem(base, idx)
         raise InterpError(f"unsupported expression {ast.dump(node)[:80]}")
+
+    # -- raw pointer element access (M2 tensors-as-pointers ABI) -------------
+    def _load_elem(self, base: SSA, idx):
+        assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
+            f"subscript load needs a pointer, got {base!r}"
+        p = self.emitter.gep(base, idx)
+        return self.emitter.load_f32(p)
+
+    def _store_elem(self, base: SSA, idx, val):
+        assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
+            f"subscript store needs a pointer, got {base!r}"
+        p = self.emitter.gep(base, idx)
+        if isinstance(val, (int, float)):
+            val = self.emitter.ssa("f32", f"arith.constant {float(val)} : f32", "float32")
+        self.emitter.store_f32(val, p)
 
     def binop(self, op, lhs, rhs):
         py_only = isinstance(lhs, (int, float)) and isinstance(rhs, (int, float))

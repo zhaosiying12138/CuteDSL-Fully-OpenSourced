@@ -9,6 +9,7 @@ The compat marker lets conformance tooling distinguish us:
     cutlass.__self_cutedsl__ is True
 """
 from . import cute  # noqa: F401  (cutlass.cute)
+from . import torch  # noqa: F401  (cutlass.torch)
 from .dtypes import (  # noqa: F401
     Constexpr,
     Int32,

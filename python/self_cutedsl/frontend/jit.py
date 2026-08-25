@@ -69,7 +69,7 @@ class _KernelCallStub:
             emitter = interp.run()
         finally:
             _builtins._active = prev
-        dynamic = [arg_values[p.name] for p in kf._params if p.kind == "dynamic"]
+        dynamic = [arg_values[p.name] for p in kf._params if p.kind in ("dynamic", "tensor")]
         _host_trace["records"].append(_KernelRecord(emitter, grid, block, dynamic))
 
 
@@ -116,9 +116,16 @@ class JitFunction:
             entries = entry_names(ptx)
             assert entries, "no kernel entry in emitted PTX"
             jit = DriverJit(ptx)
+            def _arg_type(d):
+                if hasattr(d, "_torch"):  # compat Tensor
+                    return "ptr"
+                if isinstance(d, DynamicHostValue) and d.dtype is not None and "Float" in d.dtype.name:
+                    return "f32"
+                return "i32"
+
             manifest = LaunchManifest(
                 entry=entries[0],
-                args=[{"name": getattr(d, "name", f"arg{i}"), "type": "i32"}
+                args=[{"name": getattr(d, "name", f"arg{i}"), "type": _arg_type(d)}
                       for i, d in enumerate(rec.dynamic_params)],
                 grid=tuple(rec.grid),
                 block=tuple(rec.block),
@@ -170,5 +177,7 @@ def _scan_params(fn) -> list[KernelParam]:
             kind, dtype = "constexpr", ann.dtype
         elif isinstance(ann, _DType):
             dtype = ann
+        elif getattr(ann, "__name__", "") == "Tensor" or getattr(ann, "__module__", "") == "cutlass.cute":
+            kind, dtype = "tensor", None
         out.append(KernelParam(name, kind, dtype, param.default))
     return out

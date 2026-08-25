@@ -27,3 +27,9 @@ def __getattr__(name):
 def printf(fmt: str, *args) -> None:
     from self_cutedsl.frontend import builtins
     builtins.printf(fmt, *args)
+
+
+class Tensor:
+    """Annotation marker: kernel parameter is a device tensor (ptr ABI)."""
+
+    pass
