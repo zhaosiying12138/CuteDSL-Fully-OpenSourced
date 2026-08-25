@@ -80,7 +80,9 @@ class _KernelCallStub:
             _builtins._active = prev
         abi = []
         for p in kf._params:
-            if p.kind == "tensor":
+            if p.kind == "tma":
+                abi.append(("tma", p.name))
+            elif p.kind == "tensor":
                 v = arg_values[p.name]
                 if _is_coord_meta(v):
                     continue  # compile-time coordinate meta: not an ABI arg
@@ -126,6 +128,11 @@ class JitFunction:
             if p.kind == "constexpr":
                 bound[p.name] = _as_constexpr(v)
                 key_parts.append((p.name, repr(bound[p.name])))
+            elif p.kind == "tma" or _is_tma_view(v):
+                bound[p.name] = v
+                tm = _as_tma_host(v)
+                _host_trace_tma[p.name] = tm["view"]
+                key_parts.append((p.name, "tma", repr(tm["recipe"])))
             elif p.kind == "tensor" or _is_tensor_value(v):
                 # official jit params are often unannotated; bind by value
                 v = _as_tensor_meta(v)
@@ -183,6 +190,8 @@ class JitFunction:
             for entry in abi:
                 if entry[0] == "tensor":
                     vals.append(tensors[entry[1]])
+                elif entry[0] == "tma":
+                    vals.append(_host_trace_tma[entry[1]].device_copy)
                 else:
                     vals.append(_host_trace_runtime[entry[1]])
             jit.launch(manifest, *vals)
@@ -209,7 +218,7 @@ class JitFunction:
 
 
 def _abi_mlir_type(entry) -> str:
-    if entry[0] == "tensor":
+    if entry[0] in ("tensor", "tma"):
         return "ptr"
     ty = entry[2]
     return "f32" if ty.startswith("f") else ("i64" if ty == "i64" else "i32")
@@ -252,6 +261,24 @@ def compile_function(fn, *args, **options):
 # trace state (single-threaded)
 _host_trace: dict = {"active": None, "records": []}
 _host_trace_runtime: dict = {}
+_host_trace_tma: dict = {}
+
+
+def _is_tma_view(v) -> bool:
+    from self_cutedsl.runtime.tensor_map import CUtensorMapView
+
+    return isinstance(v, CUtensorMapView)
+
+
+def _as_tma_host(v):
+    """Normalize a host-side TMA argument to {name, recipe, view}."""
+    from self_cutedsl.runtime.tensor_map import CUtensorMapView
+
+    if isinstance(v, CUtensorMapView):
+        return {"name": getattr(v, "name", "tma"), "recipe": v.recipe, "view": v}
+    if isinstance(v, dict):
+        return v
+    raise TypeError(f"bad TMA argument {type(v)}")
 
 
 def _as_constexpr(v):
@@ -287,7 +314,7 @@ def _scan_params(fn) -> list[KernelParam]:
         elif isinstance(ann, _DType):
             dtype = ann
         elif getattr(ann, "__module__", "") in ("cutlass.cute", "cutlass.dtypes") \
-                and getattr(ann, "__name__", "") in ("Tensor", "Shape", "Layout", "Coord"):
-            kind = "tensor" if ann.__name__ == "Tensor" else "constexpr"
+                and getattr(ann, "__name__", "") in ("Tensor", "Shape", "Layout", "Coord", "TmaTensor"):
+            kind = {"Tensor": "tensor", "TmaTensor": "tma"}.get(ann.__name__, "constexpr")
         out.append(KernelParam(name, kind, dtype, param.default))
     return out

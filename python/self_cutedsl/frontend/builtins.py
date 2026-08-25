@@ -316,3 +316,57 @@ def gemm(tiled_mma, acc, a_frag, b_frag):
 def extract_frag(ld_res, idx: int):
     e = _emitter()
     return e.extract_i32(ld_res, idx)
+
+
+# ------------------------------------------------------------------ TMA / pipeline
+class TmaTensor:
+    """A cute.Tensor backed by a TMA descriptor (kernel sees ptr to desc)."""
+
+    def __init__(self, desc_ptr: SSA, recipe, smem_name: str):
+        self.desc_ptr = desc_ptr      # SSA !llvm.ptr (generic)
+        self.recipe = recipe          # runtime TensorMapRecipe
+        self.smem_name = smem_name
+
+
+def make_mbarrier(name: str, count: int):
+    from .kernel_objects import Fragment  # noqa: F401
+    e = _emitter()
+    bar = e.mbarrier_ptr(name)
+    e.mbarrier_init(bar, count)
+    e.fence_mbarrier_init()
+    return bar
+
+
+def tma_load(tma, smem, bar, coords):
+    """cute.nvgpu.cpasync TMA G2S: smem tile (SmemArray/SSA) + mbarrier SSA."""
+    e = _emitter()
+    smem_ptr = getattr(smem, "ptr", smem)
+    tma_ptr = getattr(tma, "desc_ptr", tma)
+    e.tma_load(smem_ptr, tma_ptr, bar, coords)
+
+
+def tma_store(tma, smem, coords):
+    e = _emitter()
+    smem_ptr = getattr(smem, "ptr", smem)
+    tma_ptr = getattr(tma, "desc_ptr", tma)
+    e.tma_store(tma_ptr, smem_ptr, coords)
+
+
+def mbarrier_arrive_expect_tx(bar, tx_bytes: int):
+    e = _emitter()
+    e.mbarrier_arrive_expect_tx(bar, tx_bytes)
+
+
+def mbarrier_try_wait_parity(bar, phase: int):
+    e = _emitter()
+    e.mbarrier_try_wait_parity(bar, phase)
+
+
+def make_smem_tile(name: str, count: int, element=None):
+    from .meta import F32
+
+    e = _emitter()
+    elem = element or F32
+    mlir = {"f32": "f32", "f16": "f16"}.get(elem.name, "f32")
+    ptr = e.smem_tile_declare(name, int(count), mlir)
+    return SmemArray(ptr, int(count), elem)

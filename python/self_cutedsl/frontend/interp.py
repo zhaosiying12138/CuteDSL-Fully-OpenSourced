@@ -47,6 +47,12 @@ class KernelInterpreter:
                 # coordinate tensors are compile-time meta (no device pointer)
                 self.env[p.name] = val
                 continue
+            elif p.kind == "tma":
+                mlir_ty = "!llvm.ptr"
+                self.emitter.params.append((p.name, mlir_ty))
+                self.env[p.name] = SSA(mlir_ty, dyn_idx, "tma_desc")
+                dyn_idx += 1
+                continue
             elif p.kind == "tensor":
                 from .kernel_objects import KernelTensor
 
@@ -65,8 +71,9 @@ class KernelInterpreter:
                 # dynamic params are already %pN in the signature; alias them
                 self.env[p.name] = ssa
                 dyn_idx += 1
-        # renumber ssa ids after params (each branch above already bound env)
-        self.emitter._next_id = dyn_idx
+        # renumber ssa ids after params; max over params actually emitted
+        n_params = len(self.emitter.params)
+        self.emitter._next_id = max(dyn_idx, n_params)
 
         self.tidx_ssa = None  # recorded by cute.arch.thread_idx()
 
@@ -102,12 +109,13 @@ class KernelInterpreter:
                 idx = self.eval(tgt.slice) if not isinstance(tgt.slice, ast.Tuple) else self.eval(tgt.slice)
                 val = self.eval(node.value)
                 if isinstance(base, _b.SmemArray):
-                    import os as _os
-                    if _os.environ.get("SC_TRACE"):
-                        import sys as _s
-                        print("SMEM STORE fired, val:", val, file=_s.stderr)
-                    p = self.emitter.gep_smem(base.ptr, idx)
-                    self.emitter.store_smem_f16(val, p)
+                    ety = "f16" if base.elem.name == "f16" else "f32"
+                    p = self.emitter.gep_smem(base.ptr, idx, ety)
+                    if ety == "f16":
+                        self.emitter.store_smem_f16(val, p)
+                    else:
+                        self.emitter.raw(
+                            f"llvm.store {val.name}, {p.name} : f32, !llvm.ptr<3>")
                 else:
                     ptr = base.ptr if isinstance(base, KernelTensor) else base
                     elem = getattr(getattr(base, "meta", None), "element_type", None)
@@ -283,6 +291,8 @@ class KernelInterpreter:
             raise InterpError(f"unbound name {node.id!r}")
         if isinstance(node, ast.Tuple):
             return tuple(self.eval(e) for e in node.elts)
+        if isinstance(node, ast.List):
+            return [self.eval(e) for e in node.elts]
         if isinstance(node, ast.BoolOp):
             parts = [self.eval(v) for v in node.values]
             if any(isinstance(p, SSA) for p in parts):
@@ -385,8 +395,10 @@ class KernelInterpreter:
 
         if isinstance(base, _bb.SmemArray):
             i = self.eval(slice_node)
-            p = self.emitter.gep_smem(base.ptr, i)
-            return self.emitter.ssa("f16", f"llvm.load {p.name} : !llvm.ptr<3> -> f16")
+            p = self.emitter.gep_smem(base.ptr, i,
+                                      "f16" if base.elem.name == "f16" else "f32")
+            ty = "f16" if base.elem.name == "f16" else "f32"
+            return self.emitter.ssa(ty, f"llvm.load {p.name} : !llvm.ptr<3> -> {ty}")
         raise InterpError(f"subscript on {type(base)} unsupported")
 
     def _single_dynamic_index(self, slice_node):

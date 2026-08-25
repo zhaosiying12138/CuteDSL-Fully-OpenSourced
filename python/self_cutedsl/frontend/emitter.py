@@ -252,6 +252,73 @@ class KernelEmitter:
     def store_gmem_f32(self, v: SSA, p: SSA) -> None:
         self.raw(f"llvm.store {v.name}, {p.name} : f32, !llvm.ptr<1>")
 
+    # -- TMA / mbarrier (M5) ----------------------------------------------------
+    def mbarrier_ptr(self, name: str) -> SSA:
+        """Declare an mbarrier (8B) in shared memory; returns ptr."""
+        line = (f"    llvm.mlir.global internal @{name}() "
+                f"{{addr_space = 3 : i32, alignment = 8 : i64}} : i64")
+        if not any(name in g for g in self.smem_globals):
+            self.smem_globals.append(line)
+        return self.ssa("!llvm.ptr<3>", f"llvm.mlir.addressof @{name} : !llvm.ptr<3>")
+
+    def mbarrier_init(self, bar: SSA, count: int) -> None:
+        c = self.ssa("i32", f"arith.constant {int(count)} : i32")
+        self.raw(f"nvvm.mbarrier.init {bar.name}, {c.name} : !llvm.ptr<3>, i32")
+
+    def fence_mbarrier_init(self) -> None:
+        self.raw("nvvm.fence.mbarrier.init")
+
+    def mbarrier_arrive_expect_tx(self, bar: SSA, tx_bytes: int) -> None:
+        c = self.ssa("i32", f"arith.constant {int(tx_bytes)} : i32")
+        self.raw(f"nvvm.mbarrier.arrive.expect_tx {bar.name}, {c.name} "
+                 f": !llvm.ptr<3>, i32 -> i64")
+
+    def mbarrier_try_wait_parity(self, bar: SSA, phase: int) -> None:
+        p = self.ssa("i32", f"arith.constant {int(phase)} : i32")
+        t = self.ssa("i32", "arith.constant 100000000 : i32")
+        self.raw(f"nvvm.mbarrier.try_wait.parity {bar.name}, {p.name}, {t.name} "
+                 f": !llvm.ptr<3>, i32, i32")
+
+    def tma_load(self, smem: SSA, tma_ptr: SSA, bar: SSA, coords: list) -> None:
+        """cp.async.bulk.tensor.<dim>d G2S with mbarrier complete_tx."""
+        cs = []
+        for c in coords:
+            if isinstance(c, int):
+                cs.append(self.ssa("i32", f"arith.constant {int(c)} : i32"))
+            else:
+                cs.append(c)
+        ops = ", ".join(x.name for x in cs)
+        self.raw(f"nvvm.cp.async.bulk.tensor.shared.cluster.global "
+                 f"{smem.name}, {tma_ptr.name}, {bar.name}, box[{ops}] "
+                 f"{{isCTAOnly = true}} : !llvm.ptr<3>, !llvm.ptr")
+
+    def tma_store(self, tma_ptr: SSA, smem: SSA, coords: list) -> None:
+        cs = []
+        for c in coords:
+            if isinstance(c, int):
+                cs.append(self.ssa("i32", f"arith.constant {int(c)} : i32"))
+            else:
+                cs.append(c)
+        ops = ", ".join(x.name for x in cs)
+        self.raw(f"nvvm.cp.async.bulk.tensor.global.shared.cta "
+                 f"{tma_ptr.name}, {smem.name}, box[{ops}] "
+                 f": !llvm.ptr, !llvm.ptr<3>")
+        self.raw("nvvm.cp.async.bulk.commit.group")
+        self.raw("nvvm.cp.async.bulk.wait_group 0")
+
+    def smem_tile_declare(self, name: str, elems: int, elem_mlir: str = "f32",
+                          align: int = 128) -> SSA:
+        line = (f"    llvm.mlir.global internal @{name}() "
+                f"{{addr_space = 3 : i32, alignment = {align} : i64}} "
+                f": !llvm.array<{elems} x {elem_mlir}>")
+        if not any(name in g for g in self.smem_globals):
+            self.smem_globals.append(line)
+        return self.ssa("!llvm.ptr<3>", f"llvm.mlir.addressof @{name} : !llvm.ptr<3>")
+
+    def tma_desc_param(self, name: str) -> SSA:
+        """Mark a kernel param as a TMA descriptor pointer (!llvm.ptr)."""
+        return SSA("!llvm.ptr", 0, "tma_desc")
+
     # -- output ---------------------------------------------------------------
     def module_text(self) -> str:
         # param SSAs are pre-allocated as %v{i} by the interpreter; keep names in sync
@@ -277,3 +344,4 @@ def width_of(vec: SSA) -> int:
 
 def _struct_len(ty: str) -> int:
     return ty.count("i32")
+

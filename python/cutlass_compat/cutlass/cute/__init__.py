@@ -56,6 +56,10 @@ class Coord:
     pass
 
 
+class TmaTensor:
+    """Annotation marker: kernel parameter is a TMA descriptor pointer."""
+
+
 # ------------------------------------------------------------ layout utils
 def make_layout(shape, stride=None):
     from self_cutedsl.frontend.layout import CuteLayout
@@ -175,3 +179,40 @@ def sync_threads():
     from self_cutedsl.frontend.builtins import _emitter
 
     _emitter().barrier()
+
+
+# --------------------------------------------------------------- TMA / pipeline
+def make_mbarrier(name, count):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.make_mbarrier(name, count)
+
+
+def make_smem_tile(name, count, element=None):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.make_smem_tile(name, count, element)
+
+
+def tma_load(tma, smem, bar, coords):
+    from self_cutedsl.frontend import builtins
+
+    builtins.tma_load(tma, smem, bar, coords)
+
+
+def tma_store(tma, smem, coords):
+    from self_cutedsl.frontend import builtins
+
+    builtins.tma_store(tma, smem, coords)
+
+
+def mbarrier_arrive_expect_tx(bar, tx_bytes):
+    from self_cutedsl.frontend import builtins
+
+    builtins.mbarrier_arrive_expect_tx(bar, tx_bytes)
+
+
+def mbarrier_try_wait_parity(bar, phase):
+    from self_cutedsl.frontend import builtins
+
+    builtins.mbarrier_try_wait_parity(bar, phase)
