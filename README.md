@@ -125,6 +125,9 @@ baseline evidence in `artifacts/reference/results.json`).
 | TMA roundtrip (G2S + mbarrier complete_tx + S2G) golden — raw MLIR and @cute.jit frontend | `tests/runtime/sm120/test_tma_g2s_s2g.py`, `tests/python/test_tma_frontend.py` |
 | 2-stage TMA pipeline with phase-parity rollover golden (n_tiles 2/4/7, OOB tiles) | `tests/runtime/sm120/test_tma_pipeline.py` |
 | setmaxnreg inc/dec + named barriers verified on 5090 | scratch/verify_smr.py runbook |
+| CuTe object model: make_tiled_tma_atom / tma_partition / make_tiled_mma call shapes, multi-warp TMA GEMM golden (K 64/128/256) | `tests/python/test_tma_gemm_objects.py` |
+| Multi-CTA local-tile TMA GEMM (per-CTA A-row/B-col windows) golden | `tests/python/test_local_tile_kernel.py` |
+| 2-stage pipelined multi-CTA TMA GEMM (staged SMEM, parity rollover) golden | `tests/python/test_tma_pipeline_gemm.py` |
 | PTX fingerprints: ld.global.v4, ldmatrix, mma.sync.aligned.m16n8k16, cp.async.bulk.tensor, mbarrier.* | test asserts |
 
 ### Flagship status (dense_gemm / blockscaled)
@@ -133,9 +136,10 @@ baseline evidence in `artifacts/reference/results.json`).
 verified; the remaining gap is the CuTe object-model library layer
 (dynamic layout algebra in-kernel, TMA atoms/partitioning, TiledMma
 partitioning, PipelineTmaAsync driver, tile scheduler). Full inventory:
-`compat/sm120_flagship_gap.md`. Self GEMM perf today: 1156 GFLOP/s
-(512³) vs cuBLAS 4099 and official TMA GEMM 43,090 (4096³) — drivers of
-the gap are no-TMA/1-warp/no-pipeline, i.e. exactly the M6/M7 work.
+`compat/sm120_flagship_gap.md`. Self GEMM perf: warp-GEMM 1156 GFLOP/s (512³); pipelined TMA GEMM
+(2-stage, correctness-first narrow-N tile) 26.6–53.5 GFLOP/s useful —
+remaining gap drivers: N-atom tiling, multi-warp, deeper stages, warp
+specialization (each an additive step on the verified skeleton).
 
 Toolchain frozen in `compat/sm120_toolchain.lock.yaml`: pinned LLVM `23a60f15`
 (5193/5193 targets), cutlass_compiler @ `7107b055` with **check-cute 236/236
