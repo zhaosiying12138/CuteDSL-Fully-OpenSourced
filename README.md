@@ -114,6 +114,16 @@ baseline evidence in `artifacts/reference/results.json`).
 | Add + RMSNorm + FP4 quant fusion (1188 tests) | FlashInfer `cute_dsl/add_rmsnorm_fp4quant.py` | ✅ PASS | 🔨 M2+ |
 | W4A16 FP4 fused MoE B12x (142 functional tests incl. 36 numerical-accuracy configs) | FlashInfer `fused_moe/cute_dsl/blackwell_sm12x/` | ✅ PASS | 🔨 M6+ |
 
+### Self-stack verified so far (M4 complete)
+
+| Capability | Evidence |
+|---|---|
+| Official `elementwise_add.py` UNMODIFIED, golden PASS (6 shapes incl. boundaries) | `third_party/cutlass/examples/.../elementwise_add.py` in self env |
+| Performance parity with official compiler | 2048²: 790 vs 785 GB/s (101%); 8192²: 732 vs 725 (101%); 1024²: 369 vs 161 (228%) — `artifacts/perf/` |
+| Real warp MMA: ldmatrix.x4/x2.trans + mma.sync m16n8k16 golden (raw MLIR) | `tests/runtime/sm120/test_mma_m16n8k16.py` |
+| Frontend warp GEMM via @cute.jit (SMEM+ldmatrix+mma loop-carried K) golden, 3 shapes | `tests/python/test_gemm_frontend.py` |
+| PTX fingerprints: ld.global.v4, ldmatrix, mma.sync.aligned.m16n8k16 | test asserts |
+
 Toolchain frozen in `compat/sm120_toolchain.lock.yaml`: pinned LLVM `23a60f15`
 (5193/5193 targets), cutlass_compiler @ `7107b055` with **check-cute 236/236
 passed**, official DSL 4.7.0, torch 2.13.0+cu130, driver 610.53.
