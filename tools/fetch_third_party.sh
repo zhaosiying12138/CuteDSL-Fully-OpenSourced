@@ -20,7 +20,14 @@ fi
 mkdir -p third_party/flashinfer-src
 cd third_party/flashinfer-src
 if [ ! -d .git ]; then
-    git init
+    # Prefer a shared clone from a local flashinfer checkout when available
+    # (object reuse, no network); fall back to a shallow network fetch.
+    if [ -d /home/zhaosiying/codebase/flashinfer/.git ]; then
+        git clone --shared --no-checkout /home/zhaosiying/codebase/flashinfer .
+    else
+        git init
+        git remote add origin git@github.com:flashinfer-ai/flashinfer.git
+    fi
 fi
 if ! git remote get-url origin >/dev/null 2>&1; then
     # github.com SSH (port 443) is the reliable transport on this network.

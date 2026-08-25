@@ -1,0 +1,21 @@
+/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py:1384: DeprecationWarning: Migrated to examples/CuTeDSL/helpers/static_persistent_tile_scheduler.py (BSD-3). The wheel copy will be removed in a future release.
+  tile_sched_params = utils.PersistentTileSchedulerParams(
+/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py:1888: DeprecationWarning: cute.testing.benchmark is deprecated, use cutlass.testing.benchmark instead
+  exec_time = testing.benchmark(
+/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py:1871: DeprecationWarning: cute.testing.JitArguments is deprecated, use cutlass.testing.JitArguments instead
+  return cute.testing.JitArguments(
+Running Blackwell Geforce Blockscaled Dense GEMM with:
+mnkl: (1024, 1024, 1024, 1)
+A dtype: Float8E5M2, B dtype: Float8E5M2, A/B scale factor dtype: Float8E8M0FNU, C dtype: Float16, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Tile Shape: (128, 128, 128)
+Epilogue tile: (128, 128)
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Reference checking ...
+Execution time: 125.2480000257492 microseconds per iteration
+GFLOPS: 17145.85181047608
+PASS

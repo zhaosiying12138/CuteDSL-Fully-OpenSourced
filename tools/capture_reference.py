@@ -61,12 +61,14 @@ def collect_env_meta() -> dict:
 
 
 def run_case(case: dict, env_meta: dict, timeout: int) -> dict:
-    src = ROOT / case["source_path"]
+    cwd = ROOT / case.get("cwd", ".")
+    src = (cwd / case["source_path"]).resolve()
     rec = {
         "id": case["id"],
         "source_path": case["source_path"],
         "source_sha256": sha256_file(src) if src.exists() else None,
         "argv": case.get("argv", []),
+        "runner": case.get("runner", "direct"),
         **env_meta,
         "seed": case.get("seed", 0),
         "atol": case.get("atol"),
@@ -78,7 +80,11 @@ def run_case(case: dict, env_meta: dict, timeout: int) -> dict:
         rec.update(status="NOT_CAPTURED", detail=f"missing source {src}")
         return rec
 
-    cmd = [sys.executable, str(src)] + [str(a) for a in case.get("argv", [])]
+    runner = case.get("runner", "direct")
+    if runner == "pytest":
+        cmd = [sys.executable, "-m", "pytest", str(src)] + [str(a) for a in case.get("argv", [])]
+    else:
+        cmd = [sys.executable, str(src)] + [str(a) for a in case.get("argv", [])]
     env = dict(os.environ)
     env.setdefault("PYTHONHASHSEED", str(case.get("seed", 0)))
     log_path = ROOT / "artifacts" / "reference" / "logs" / f"{case['id']}.log"
@@ -87,13 +93,19 @@ def run_case(case: dict, env_meta: dict, timeout: int) -> dict:
         t0 = time.monotonic()
         with open(log_path, "w") as log:
             proc = subprocess.run(
-                cmd, cwd=str(ROOT), env=env, timeout=timeout,
+                cmd, cwd=str(cwd), env=env, timeout=timeout,
                 stdout=log, stderr=subprocess.STDOUT,
             )
         dt = time.monotonic() - t0
         out = log_path.read_text(errors="replace")
+        if proc.returncode == 0:
+            status = "PASS"
+        elif case.get("expected_fail") and proc.returncode == 2:  # argparse parser.error
+            status = "EXPECTED_FAIL"
+        else:
+            status = "FAIL"
         rec.update(
-            status="PASS" if proc.returncode == 0 else "FAIL",
+            status=status,
             returncode=proc.returncode,
             wall_seconds=round(dt, 2),
             stdout_sha256=hashlib.sha256(out.encode()).hexdigest(),
@@ -131,6 +143,9 @@ def main() -> int:
 
     existing = {c["id"] for c in results["cases"]}
     for case in cases:
+        if case.get("excluded"):
+            print(f"[skip] {case['id']} (excluded by manifest)")
+            continue
         if case["id"] in existing:
             print(f"[skip] {case['id']} (already captured; delete to re-run)")
             continue
@@ -142,7 +157,7 @@ def main() -> int:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(results, indent=2))
 
-    n_fail = sum(1 for c in results["cases"] if c["status"] != "PASS")
+    n_fail = sum(1 for c in results["cases"] if c["status"] not in ("PASS", "EXPECTED_FAIL"))
     print(f"\n{len(results['cases'])} captured, {n_fail} not-PASS")
     return 1 if n_fail else 0
 

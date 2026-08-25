@@ -28,4 +28,14 @@ self_env:
 host:
   cmake: "4.2.3"
   ninja: "1.13.2"
+  gcc: "15.2.0"           # system clang 21.1.8 segfaults under -j24 on this host
   cuda_toolkit: "/usr/local/cuda-13.3"
+
+# --- frozen build results (verified 2026-08-25) ---
+builds:
+  pinned_llvm:
+    commit: 23a60f15f2fcafcf67b95b0a035053579958b732
+    targets: 5193            # all built, gcc -j16, Release+Assertions
+    tools: [mlir-opt, mlir-tblgen, mlir-translate, llc]
+  cutlass_compiler:
+    check_cute: "236/236 passed (100%)"

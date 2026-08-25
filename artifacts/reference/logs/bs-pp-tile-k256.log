@@ -1,0 +1,37 @@
+/home/zhaosiying/cutedsl-fully-opensourced/.venv-reference/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py:1448: DeprecationWarning: Migrated to examples/CuTeDSL/helpers/static_persistent_tile_scheduler.py (BSD-3). The wheel copy will be removed in a future release.
+  tile_sched_params = utils.PersistentTileSchedulerParams(
+Running Blackwell Geforce Blockscaled Dense GEMM with:
+mnkl: (1024, 1024, 1024, 1)
+A dtype: Float4E2M1FN, B dtype: Float4E2M1FN, A/B scale factor dtype: Float8E8M0FNU, C dtype: Float16, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Tile Shape: (128, 128, 256)
+Epilogue tile: (128, 128)
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Traceback (most recent call last):
+  File "/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py", line 2064, in <module>
+    run_bs(
+  File "/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py", line 1837, in run_bs
+    compiled_gemm = cute.compile(
+                    ^^^^^^^^^^^^^
+  File "/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py", line 443, in __call__
+    ).launch(
+      ^^^^^^^
+  File "/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py", line 741, in kernel
+    if warp_idx >= self.tma_load_warp_id:
+  File "/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py", line 826, in elif_region_12
+    elif warp_idx < self.tma_load_warp_id:
+  File "/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py", line 891, in while_region_15
+    while work_tile.is_valid_tile:
+  File "/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py", line 943, in while_after_block_16
+    tCrSFA_copy_view_filtered[None, None, 0],
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/zhaosiying/cutedsl-fully-opensourced/.venv-reference/lib/python3.12/site-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/_mlir/dialects/_cute_ops_gen.py", line 5764, in __init__
+    super().__init__(self.OPERATION_NAME, self._ODS_REGIONS, self._ODS_OPERAND_SEGMENTS, self._ODS_RESULT_SEGMENTS, attributes=attributes, results=results, operands=operands, successors=_ods_successors, regions=regions, loc=loc, ip=ip)
+cutlass._mlir._mlir_libs._site_initialize.<locals>.MLIRError: Operation creation failed:
+error: unknown: expects `coord` and shape of view are weakly congruent, but got '!cute.layout<"((1,(1,2,4)),1,2,2):((0,(0,1,4)),0,2,16)">', '!cute.coord<"(_,_,0)">'

@@ -1,0 +1,51 @@
+# exclusions.yaml — out-of-scope and known-broken configurations (M0)
+#
+# Two classes of exclusions live here:
+#   architecture  — deliberately unsupported by this profile (hard scope line)
+#   upstream_bug  — the OFFICIAL stack itself cannot pass these at the pinned
+#                   commits; frozen as evidence. Also mirrored per-case in
+#                   sm120_reference.lock.yaml.
+
+schema: 1
+
+architecture:
+  - id: non-sm120-targets
+    detail: >
+      Only sm_120a codegen. SM80/89/90/90a/100/100a/103/103a/121 backends,
+      AMD and CPU backends, fatbin and multi-arch builds are rejected.
+  - id: sm90a-wgmma
+    detail: "cute/hopper/** demos: WGMMA + TMA of Hopper; excluded (no SM90 support)."
+  - id: sm100a-tcgen05
+    detail: >
+      cute/blackwell/** datacenter demos and FlashInfer MLA decode / SM100
+      blockscaled GEMM wrappers: tcgen05 MMA + TMEM; SM120a has no TMEM.
+  - id: cluster-tma-multicast
+    detail: >
+      First version implements cluster (1,1,1) only; all corpus kernels
+      constant-fold multicast off. Multi-CTA clusters / TMA multicast are
+      future work, not required by the frozen corpus.
+  - id: smem-over-99kib
+    detail: "Configs exceeding 99 KiB SMEM/block are invalid on SM120; rejected."
+  - id: proprietary-fallbacks
+    detail: >
+      nvcc / NVRTC / ptxas / libNVVM / official CuTeDSL wheel as compilation
+      fallbacks: forbidden anywhere in the self stack.
+
+upstream_bug:
+  - id: dense-oob-4-aligned
+    detail: >
+      dense_gemm.py fails its own reference check for shapes 4-element-but-
+      not-8-element aligned in M or N (probed: 4100x2044x512, 4096x2052x512;
+      ~99% mismatched elements). 8-aligned partial tiles pass.
+    evidence: artifacts/reference/results.json
+  - id: bs-pp-tile-k256
+    detail: >
+      Ping-pong MXFP4 tile-K 256 hits an official MLIR verifier error
+      ("coord and shape of view are weakly congruent"). Cooperative passes.
+    evidence: artifacts/reference/logs/bs-pp-tile-k256.log
+  - id: bs-coop-unaligned-input
+    detail: >
+      Blockscaled demos reject non-aligned shapes upstream with
+      "Invalid tensor alignment" (e.g. 500x777x256); boundary corpus uses
+      16-element-aligned partial tiles (512x784x256).
+    evidence: artifacts/reference/logs/bs-coop-boundary.log

@@ -96,21 +96,27 @@ python tools/run_sm120_validation.py \
 
 ## Tested operators
 
-Results are updated as milestones complete. "PASS" means: the unmodified
+Results are updated as milestones complete. "Self PASS" means: the unmodified
 upstream source, at the pinned commit recorded in
 `compat/sm120_reference.lock.yaml`, compiled and executed **entirely by this
-stack** on the RTX 5090, with reference checks enabled.
+stack** on the RTX 5090, with reference checks enabled. "Official PASS" means
+the same source passed in the frozen official reference environment (M0
+baseline evidence in `artifacts/reference/results.json`).
 
-### Status: 🔨 in progress (M0 — baseline capture)
+### Status: M0 complete — official baseline frozen (2026-08-25)
 
-| Operator | Source | Status |
-|---|---|---|
-| dense GEMM (FP16/BF16, TMA pipeline, warp-specialized) | CUTLASS `blackwell_geforce` example | ⏳ |
-| block-scaled GEMM — cooperative | CUTLASS `blackwell_geforce` example | ⏳ |
-| block-scaled GEMM — ping-pong | CUTLASS `blackwell_geforce` example | ⏳ |
-| RMSNorm + FP4 quantization fusion | FlashInfer `cute_dsl/rmsnorm_fp4quant.py` | ⏳ |
-| Add + RMSNorm + FP4 quantization fusion | FlashInfer `cute_dsl/add_rmsnorm_fp4quant.py` | ⏳ |
-| W4A16 FP4 fused MoE (B12x) | FlashInfer `fused_moe/cute_dsl/blackwell_sm12x/` | ⏳ |
+| Operator | Source | Official baseline | Self stack |
+|---|---|---|---|
+| dense GEMM — 7 configs (FP16/BF16, tiles 64³–128×256×64, M/N-major, batch, boundary) | CUTLASS `blackwell_geforce/dense_gemm.py` @ 7107b055 | ✅ 7/7 PASS | 🔨 M6 |
+| block-scaled GEMM — cooperative, 10 configs (NVFP4/MXFP4/MXFP8-E4M3/MXFP8-E5M2/mixed FP4×FP8, tile-K 128/256, epilogue 128×128/64×32, batch, boundary, 1 negative) | CUTLASS `dense_blockscaled_gemm_persistent_cooperative.py` | ✅ 10/10 PASS | 🔨 M7 |
+| block-scaled GEMM — ping-pong, 6 configs | CUTLASS `dense_blockscaled_gemm_persistent_pingpong.py` | ✅ 6/6 PASS (tile-K 256 excluded: official bug, see `compat/exclusions.yaml`) | 🔨 M7 |
+| RMSNorm + FP4 quant fusion (1007 parametrized tests) | FlashInfer `cute_dsl/rmsnorm_fp4quant.py` @ 9d33a28e | ✅ PASS | 🔨 M2+ |
+| Add + RMSNorm + FP4 quant fusion (1188 tests) | FlashInfer `cute_dsl/add_rmsnorm_fp4quant.py` | ✅ PASS | 🔨 M2+ |
+| W4A16 FP4 fused MoE B12x (142 functional tests incl. 36 numerical-accuracy configs) | FlashInfer `fused_moe/cute_dsl/blackwell_sm12x/` | ✅ PASS | 🔨 M6+ |
+
+Toolchain frozen in `compat/sm120_toolchain.lock.yaml`: pinned LLVM `23a60f15`
+(5193/5193 targets), cutlass_compiler @ `7107b055` with **check-cute 236/236
+passed**, official DSL 4.7.0, torch 2.13.0+cu130, driver 610.53.
 
 ## Repository layout
 

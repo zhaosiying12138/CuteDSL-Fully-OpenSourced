@@ -41,12 +41,9 @@ cmake -G Ninja -S scratch/llvm-project/llvm -B build-llvm \
     -DLLVM_INCLUDE_BENCHMARKS=OFF \
     -DLLVM_INCLUDE_DOCS=OFF \
     -DLLVM_INCLUDE_TESTS=OFF \
-    -DLLVM_ENABLE_ZSTD=ON \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
-    -DLLVM_USE_LINKER=lld
+    -DLLVM_ENABLE_ZSTD=ON
 
-echo "[build_pinned_llvm] building (this takes ~30-60 min on 24 cores)..."
-ninja -C build-llvm
+echo "[build_pinned_llvm] building with gcc (system clang 21 segfaults under load)..."
+ninja -C build-llvm -j "${LLVM_BUILD_JOBS:-16}"
 
 echo "[build_pinned_llvm] done. Tools in build-llvm/bin (mlir-opt, mlir-tblgen, llc, ...)"

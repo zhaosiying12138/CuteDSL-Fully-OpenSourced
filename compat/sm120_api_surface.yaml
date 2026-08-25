@@ -1,0 +1,2174 @@
+schema: 1
+generated_by: tools/gen_api_surface.py
+note: API surface required by the frozen SM120 conformance corpus
+shared_core_symbols:
+- cutlass.BFloat16
+- cutlass.Boolean
+- cutlass.Constexpr
+- cutlass.Float16
+- cutlass.Float32
+- cutlass.Float4E2M1FN
+- cutlass.Float8E4M3FN
+- cutlass.Float8E5M2
+- cutlass.Float8E8M0FNU
+- cutlass.Int16
+- cutlass.Int32
+- cutlass.Int64
+- cutlass.Numeric
+- cutlass.const_expr
+- cutlass.cute.ComposedLayout
+- cutlass.cute.CopyAtom
+- cutlass.cute.Layout
+- cutlass.cute.Tensor
+- cutlass.cute.TiledMma
+- cutlass.cute.append
+- cutlass.cute.arch
+- cutlass.cute.arch.block_idx
+- cutlass.cute.arch.block_idx_in_cluster
+- cutlass.cute.arch.cluster_arrive_relaxed
+- cutlass.cute.arch.cluster_wait
+- cutlass.cute.arch.fence_proxy
+- cutlass.cute.arch.grid_dim
+- cutlass.cute.arch.make_warp_uniform
+- cutlass.cute.arch.mbarrier_init_fence
+- cutlass.cute.arch.setmaxregister_decrease
+- cutlass.cute.arch.setmaxregister_increase
+- cutlass.cute.arch.sync_threads
+- cutlass.cute.arch.thread_idx
+- cutlass.cute.arch.warp_idx
+- cutlass.cute.compile
+- cutlass.cute.copy
+- cutlass.cute.cosize
+- cutlass.cute.filter_zeros
+- cutlass.cute.gemm
+- cutlass.cute.group_modes
+- cutlass.cute.jit
+- cutlass.cute.kernel
+- cutlass.cute.local_tile
+- cutlass.cute.make_copy_atom
+- cutlass.cute.make_layout
+- cutlass.cute.make_rmem_tensor
+- cutlass.cute.make_tensor
+- cutlass.cute.make_tiled_copy
+- cutlass.cute.make_tiled_copy_A
+- cutlass.cute.make_tiled_copy_B
+- cutlass.cute.make_tiled_copy_C_atom
+- cutlass.cute.make_tiled_copy_S
+- cutlass.cute.make_tiled_mma
+- cutlass.cute.nvgpu
+- cutlass.cute.nvgpu.CopyUniversalOp
+- cutlass.cute.nvgpu.cpasync
+- cutlass.cute.nvgpu.cpasync.prefetch_descriptor
+- cutlass.cute.nvgpu.cpasync.tma_partition
+- cutlass.cute.nvgpu.warp
+- cutlass.cute.nvgpu.warp.LdMatrix8x8x16bOp
+- cutlass.cute.nvgpu.warp.MmaMXF4NVF4Op
+- cutlass.cute.nvgpu.warp.StMatrix8x8x16bOp
+- cutlass.cute.nvgpu.warpgroup
+- cutlass.cute.nvgpu.warpgroup.make_smem_layout_atom
+- cutlass.cute.recast_tensor
+- cutlass.cute.shape
+- cutlass.cute.size
+- cutlass.cute.size_in_bytes
+- cutlass.cute.slice_
+- cutlass.cute.struct
+- cutlass.cute.struct.Align
+- cutlass.cute.struct.MemRange
+- cutlass.cute.tile_to_shape
+- cutlass.dtype
+- cutlass.pipeline.Agent
+- cutlass.pipeline.Agent.Thread
+- cutlass.pipeline.CooperativeGroup
+- cutlass.pipeline.NamedBarrier
+- cutlass.pipeline.PipelineTmaAsync
+- cutlass.pipeline.PipelineTmaAsync.create
+- cutlass.pipeline.PipelineUserType
+- cutlass.pipeline.PipelineUserType.Consumer
+- cutlass.pipeline.PipelineUserType.Producer
+- cutlass.pipeline.make_pipeline_state
+- cutlass.range_constexpr
+- cutlass.utils
+- cutlass.utils.HardwareInfo
+- cutlass.utils.LayoutEnum
+- cutlass.utils.LayoutEnum.from_tensor
+- cutlass.utils.SmemAllocator
+- cutlass.utils.blackwell_helpers.get_permutation_mnk
+- cutlass.utils.blockscaled_layout.tile_atom_to_shape_SF
+- cutlass.utils.get_smem_capacity_in_bytes
+- cutlass.utils.hopper_helpers.get_smem_layout_atom
+cutlass_demos:
+  cutlass.BFloat16:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.Boolean:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.Constexpr:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.Float16:
+    count: 7
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.Float32:
+    count: 13
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 6
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 6
+  cutlass.Float4E2M1FN:
+    count: 21
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 9
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 8
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 4
+  cutlass.Float8E4M3FN:
+    count: 7
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 3
+  cutlass.Float8E5M2:
+    count: 3
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 1
+  cutlass.Float8E8M0FNU:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 6
+  cutlass.Int16:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.Int32:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+  cutlass.Int64:
+    count: 4
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.Int8:
+    count: 26
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 12
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 12
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 2
+  cutlass.Numeric:
+    count: 48
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 10
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 19
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 19
+  cutlass.const_expr:
+    count: 12
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 4
+  cutlass.cute.ComposedLayout:
+    count: 24
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 8
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 8
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 8
+  cutlass.cute.CopyAtom:
+    count: 19
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 7
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 7
+  cutlass.cute.Layout:
+    count: 20
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 8
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 8
+  cutlass.cute.Tensor:
+    count: 45
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 11
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 17
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 17
+  cutlass.cute.TiledMma:
+    count: 5
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.cute.append:
+    count: 6
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.cute.arch:
+    count: 42
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 12
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 14
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 16
+  cutlass.cute.arch.block_idx:
+    count: 4
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.cute.arch.block_idx_in_cluster:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.cluster_arrive_relaxed:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.cluster_wait:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.fence_proxy:
+    count: 4
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.grid_dim:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.make_warp_uniform:
+    count: 7
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.cute.arch.mbarrier_init_fence:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.setmaxregister_decrease:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.setmaxregister_increase:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.sync_threads:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.thread_idx:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.arch.warp_idx:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.compile:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.copy:
+    count: 46
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 10
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 18
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 18
+  cutlass.cute.cosize:
+    count: 13
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 5
+  cutlass.cute.filter_zeros:
+    count: 36
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 18
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 18
+  cutlass.cute.gemm:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.cute.group_modes:
+    count: 29
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 13
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 11
+  cutlass.cute.jit:
+    count: 7
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 4
+  cutlass.cute.kernel:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.local_tile:
+    count: 13
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 5
+  cutlass.cute.make_copy_atom:
+    count: 9
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 2
+  cutlass.cute.make_layout:
+    count: 22
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 8
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 7
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 7
+  cutlass.cute.make_layout_image_mask:
+    count: 2
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+  cutlass.cute.make_rmem_tensor:
+    count: 9
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.cute.make_tensor:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.cute.make_tiled_copy:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.cute.make_tiled_copy_A:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.make_tiled_copy_B:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.make_tiled_copy_C_atom:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.make_tiled_copy_S:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.make_tiled_mma:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.nvgpu:
+    count: 31
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 15
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 5
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 6
+  cutlass.cute.nvgpu.CopyUniversalOp:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.nvgpu.cpasync:
+    count: 11
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 11
+  cutlass.cute.nvgpu.cpasync.CopyBulkTensorTileG2SMulticastOp:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.nvgpu.cpasync.CopyBulkTensorTileG2SOp:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.nvgpu.cpasync.CopyBulkTensorTileS2GOp:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.nvgpu.cpasync.make_tiled_tma_atom:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.cute.nvgpu.cpasync.prefetch_descriptor:
+    count: 13
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 5
+  cutlass.cute.nvgpu.cpasync.tma_partition:
+    count: 13
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 5
+  cutlass.cute.nvgpu.warp:
+    count: 12
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 6
+  cutlass.cute.nvgpu.warp.LdMatrix8x16x8bOp:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 1
+  cutlass.cute.nvgpu.warp.LdMatrix8x8x16bOp:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 1
+  cutlass.cute.nvgpu.warp.MmaF16BF16Op:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+  cutlass.cute.nvgpu.warp.MmaMXF4NVF4Op:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 1
+  cutlass.cute.nvgpu.warp.MmaMXF4Op:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 1
+  cutlass.cute.nvgpu.warp.MmaMXF8F6F4Op:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 1
+  cutlass.cute.nvgpu.warp.MmaMXF8Op:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/blockscaled_gemm_dispatch.py: 1
+  cutlass.cute.nvgpu.warp.StMatrix8x8x16bOp:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.nvgpu.warpgroup:
+    count: 6
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.cute.nvgpu.warpgroup.make_smem_layout_atom:
+    count: 6
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.cute.rank:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+  cutlass.cute.recast_tensor:
+    count: 8
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 4
+  cutlass.cute.shape:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.cute.size:
+    count: 56
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 10
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 23
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 23
+  cutlass.cute.size_in_bytes:
+    count: 10
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 4
+  cutlass.cute.slice_:
+    count: 48
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 12
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 18
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 18
+  cutlass.cute.struct:
+    count: 33
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 8
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 12
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 13
+  cutlass.cute.struct.Align:
+    count: 13
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 5
+  cutlass.cute.struct.MemRange:
+    count: 17
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 6
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 7
+  cutlass.cute.testing:
+    count: 9
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 6
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.cute.testing.JitArguments:
+    count: 2
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+  cutlass.cute.testing.benchmark:
+    count: 2
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+  cutlass.cute.testing.convert:
+    count: 8
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.cute.testing.get_workspace_count:
+    count: 2
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+  cutlass.cute.tile_to_shape:
+    count: 6
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.cute.zipped_divide:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.dtype:
+    count: 14
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 5
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 5
+  cutlass.pipeline.Agent:
+    count: 10
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 4
+  cutlass.pipeline.Agent.Thread:
+    count: 10
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 4
+  cutlass.pipeline.CooperativeGroup:
+    count: 10
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 4
+  cutlass.pipeline.NamedBarrier:
+    count: 5
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.pipeline.PipelineOrder:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.PipelineOrder.create:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.PipelineState:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.PipelineTmaAsync:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.PipelineTmaAsync.create:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.PipelineTmaStore:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.PipelineTmaStore.create:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.PipelineUserType:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.pipeline.PipelineUserType.Consumer:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.PipelineUserType.Producer:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.pipeline.make_pipeline_state:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.pipeline.sync:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+  cutlass.range:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.range_constexpr:
+    count: 26
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 4
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 11
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 11
+  cutlass.testing:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.testing.JitArguments:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.testing.benchmark:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.testing.get_workspace_count:
+    count: 1
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.torch.RandomInitConfig:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.torch.TensorInitType:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.torch.TensorInitType.RANDOM:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.torch.convert_cute_tensor:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.torch.create_and_permute_torch_tensor:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.torch.cute_tensor_like:
+    count: 15
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 7
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 7
+  cutlass.torch.default_stream:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.torch.matrix:
+    count: 12
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 6
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.utils:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.utils.HardwareInfo:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.LayoutEnum:
+    count: 9
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.utils.LayoutEnum.from_tensor:
+    count: 9
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.utils.PersistentTileSchedulerParams:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.utils.SmemAllocator:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.StaticPersistentTileScheduler:
+    count: 6
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.utils.StaticPersistentTileScheduler.create:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.StaticPersistentTileScheduler.get_grid_shape:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.blackwell_helpers.get_layoutSFA_TV:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.blackwell_helpers.get_layoutSFB_TV:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.blackwell_helpers.get_permutation_mnk:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.blackwell_helpers.partition_fragment_SFA:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.blackwell_helpers.partition_fragment_SFB:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.blackwell_helpers.sm120_get_smem_store_op:
+    count: 2
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.blockscaled_layout.sm120_make_smem_layout_sfa:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.utils.blockscaled_layout.sm120_make_smem_layout_sfb:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.utils.blockscaled_layout.tile_atom_to_shape_SF:
+    count: 4
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 2
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 2
+  cutlass.utils.get_smem_capacity_in_bytes:
+    count: 3
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 1
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 1
+  cutlass.utils.hopper_helpers.compute_tile_shape_or_override:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+  cutlass.utils.hopper_helpers.get_smem_layout_atom:
+    count: 6
+    files:
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+      : 3
+      ? third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+      : 3
+  cutlass.utils.hopper_helpers.make_smem_layout_a:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+  cutlass.utils.hopper_helpers.make_smem_layout_b:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+  cutlass.utils.hopper_helpers.make_smem_layout_epi:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+  cutlass.utils.hopper_helpers.sm90_get_smem_store_op:
+    count: 1
+    files:
+      third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py: 1
+flashinfer_ops:
+  cutlass.BFloat16:
+    count: 43
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 11
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 11
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 9
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 4
+  cutlass.Boolean:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.Constexpr:
+    count: 30
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 18
+  cutlass.Float16:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 4
+  cutlass.Float32:
+    count: 173
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 29
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 26
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 42
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 65
+  cutlass.Float4E2M1FN:
+    count: 7
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 5
+  cutlass.Float8E4M3B11FNUZ:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass.Float8E4M3FN:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 6
+  cutlass.Float8E5M2:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 3
+  cutlass.Float8E8M0FNU:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass.Int16:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.Int32:
+    count: 70
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 8
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 40
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 14
+  cutlass.Int64:
+    count: 19
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 3
+  cutlass.Numeric:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 2
+  cutlass.TFloat32:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass.Uint32:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 2
+  cutlass.Uint8:
+    count: 34
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 3
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 6
+  cutlass._mlir.dialects.cute.AddressSpace:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+  cutlass._mlir.dialects.cute.AddressSpace.generic:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass._mlir.dialects.cute.PtrType:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass._mlir.dialects.cute.PtrType.get:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass._mlir.dialects.llvm.AsmDialect:
+    count: 98
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 70
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 10
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 10
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 8
+  cutlass._mlir.dialects.llvm.AsmDialect.AD_ATT:
+    count: 98
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 70
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 10
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 10
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 8
+  cutlass._mlir.dialects.llvm.StructType:
+    count: 8
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 8
+  cutlass._mlir.dialects.llvm.StructType.get_literal:
+    count: 8
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 8
+  cutlass._mlir.dialects.llvm.bitcast:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 2
+  cutlass._mlir.dialects.llvm.extractvalue:
+    count: 34
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 34
+  cutlass._mlir.dialects.llvm.inline_asm:
+    count: 98
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 70
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 10
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 10
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 8
+  cutlass._mlir.dialects.llvm.ptrtoint:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 2
+  cutlass._mlir.ir.Type:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 3
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass._mlir.ir.Type.parse:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 3
+  cutlass._mlir.ir.Value:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass.const_expr:
+    count: 179
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 12
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 27
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 32
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 8
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 8
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 50
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 39
+  cutlass.cute.AddressSpace:
+    count: 29
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 29
+  cutlass.cute.AddressSpace.gmem:
+    count: 29
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 29
+  cutlass.cute.ComposedLayout:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.cute.Coord:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+  cutlass.cute.CopyAtom:
+    count: 18
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 6
+  cutlass.cute.Layout:
+    count: 13
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.cute.MmaAtom:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.Pointer:
+    count: 48
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 19
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 14
+  cutlass.cute.ReductionOp:
+    count: 5
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 3
+  cutlass.cute.ReductionOp.ADD:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.ReductionOp.MAX:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.Shape:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.Tensor:
+    count: 491
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 10
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 14
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 40
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 49
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 49
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 81
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 16
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 58
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 174
+  cutlass.cute.TensorSSA:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 2
+  cutlass.cute.Tile:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+  cutlass.cute.TiledMma:
+    count: 5
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.append:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+  cutlass.cute.arch:
+    count: 183
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 14
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 17
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 12
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 20
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 20
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 30
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 33
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 37
+  cutlass.cute.arch.alloc_smem:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 4
+  cutlass.cute.arch.barrier:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.arch.block_idx:
+    count: 12
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 4
+  cutlass.cute.arch.block_idx_in_cluster:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.arch.cluster_arrive_relaxed:
+    count: 5
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 3
+  cutlass.cute.arch.cluster_wait:
+    count: 5
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 3
+  cutlass.cute.arch.cp_async_commit_group:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 4
+  cutlass.cute.arch.cp_async_wait_group:
+    count: 5
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 3
+  cutlass.cute.arch.elect_one:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.arch.fence_acq_rel_cluster:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.arch.fence_proxy:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.cute.arch.fmax:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.arch.grid_dim:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 2
+  cutlass.cute.arch.griddepcontrol_launch_dependents:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.arch.griddepcontrol_wait:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.arch.lane_idx:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 2
+  cutlass.cute.arch.make_warp_uniform:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 2
+  cutlass.cute.arch.mbarrier_arrive_and_expect_tx:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.arch.mbarrier_init:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.arch.mbarrier_init_fence:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.arch.mbarrier_wait:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.arch.rcp_approx:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.arch.setmaxregister_decrease:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.arch.setmaxregister_increase:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.arch.shuffle_sync:
+    count: 8
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 4
+  cutlass.cute.arch.shuffle_sync_bfly:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.arch.sync_threads:
+    count: 50
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 9
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 10
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 19
+  cutlass.cute.arch.sync_warp:
+    count: 5
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 5
+  cutlass.cute.arch.thread_idx:
+    count: 10
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 4
+  cutlass.cute.arch.warp_idx:
+    count: 5
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.arch.warp_reduction_sum:
+    count: 16
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 16
+  cutlass.cute.arch.warp_redux_sync:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 1
+  cutlass.cute.autovec_copy:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 2
+  cutlass.cute.ceil_div:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.compile:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 4
+  cutlass.cute.copy:
+    count: 137
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 44
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 44
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 44
+  cutlass.cute.cosize:
+    count: 38
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 12
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 12
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 12
+  cutlass.cute.crd2idx:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.elem_less:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+  cutlass.cute.filter_zeros:
+    count: 80
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 26
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 26
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 26
+  cutlass.cute.gemm:
+    count: 15
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 5
+  cutlass.cute.group_modes:
+    count: 48
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 16
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 16
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 16
+  cutlass.cute.jit:
+    count: 132
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 27
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 22
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 69
+  cutlass.cute.kernel:
+    count: 10
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 4
+  cutlass.cute.local_tile:
+    count: 35
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 3
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 11
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 11
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 6
+  cutlass.cute.make_copy_atom:
+    count: 18
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 5
+  cutlass.cute.make_fragment_like:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 3
+  cutlass.cute.make_identity_tensor:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.make_layout:
+    count: 66
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 4
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 4
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 16
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 19
+  cutlass.cute.make_mma_atom:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.make_ordered_layout:
+    count: 5
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 4
+  cutlass.cute.make_rmem_tensor:
+    count: 52
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 16
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 11
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 11
+  cutlass.cute.make_tensor:
+    count: 46
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 16
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 19
+  cutlass.cute.make_tiled_copy:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 2
+  cutlass.cute.make_tiled_copy_A:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.make_tiled_copy_B:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.make_tiled_copy_C_atom:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.make_tiled_copy_S:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.make_tiled_mma:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.math:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 2
+  cutlass.cute.math.exp:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 2
+  cutlass.cute.math.rsqrt:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.nvgpu:
+    count: 23
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 6
+  cutlass.cute.nvgpu.CopyUniversalOp:
+    count: 7
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 2
+  cutlass.cute.nvgpu.cpasync:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.nvgpu.cpasync.CopyG2SOp:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.nvgpu.cpasync.prefetch_descriptor:
+    count: 18
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 6
+  cutlass.cute.nvgpu.cpasync.tma_partition:
+    count: 24
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 8
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 8
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 8
+  cutlass.cute.nvgpu.warp:
+    count: 12
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 4
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 4
+  cutlass.cute.nvgpu.warp.LdMatrix8x8x16bOp:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 2
+  cutlass.cute.nvgpu.warp.MmaMXF4NVF4Op:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.nvgpu.warp.StMatrix8x8x16bOp:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.nvgpu.warp.mma.Field.SFA:
+    count: 15
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 5
+  cutlass.cute.nvgpu.warp.mma.Field.SFB:
+    count: 15
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 5
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 5
+  cutlass.cute.nvgpu.warpgroup:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+  cutlass.cute.nvgpu.warpgroup.make_smem_layout_atom:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+  cutlass.cute.prepend:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.recast_tensor:
+    count: 22
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 7
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 8
+  cutlass.cute.runtime:
+    count: 106
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 7
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 9
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 58
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 32
+  cutlass.cute.runtime.make_fake_compact_tensor:
+    count: 104
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 6
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 8
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py: 58
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 32
+  cutlass.cute.runtime.make_fake_stream:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+  cutlass.cute.shape:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.cute.size:
+    count: 55
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 15
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 15
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 19
+  cutlass.cute.size_in_bytes:
+    count: 32
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 13
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 13
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 6
+  cutlass.cute.slice_:
+    count: 38
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 13
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 13
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 12
+  cutlass.cute.struct:
+    count: 121
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 37
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 37
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 41
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 6
+  cutlass.cute.struct.Align:
+    count: 38
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 12
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 12
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 12
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 2
+  cutlass.cute.struct.MemRange:
+    count: 75
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 23
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 23
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 27
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 2
+  cutlass.cute.sym_int:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 2
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 2
+  cutlass.cute.tile_to_shape:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+  cutlass.cute.typing.AddressSpace.generic:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass.cutlass_dsl.T.f32:
+    count: 42
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 40
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+  cutlass.cutlass_dsl.T.i16:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 2
+  cutlass.cutlass_dsl.T.i32:
+    count: 75
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 66
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.cutlass_dsl.T.i64:
+    count: 4
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.dtype:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 2
+  cutlass.pipeline.Agent:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 2
+  cutlass.pipeline.Agent.Thread:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 2
+  cutlass.pipeline.CooperativeGroup:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 2
+  cutlass.pipeline.NamedBarrier:
+    count: 7
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.pipeline.PipelineTmaAsync:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.pipeline.PipelineTmaAsync.create:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.pipeline.PipelineUserType:
+    count: 18
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 6
+  cutlass.pipeline.PipelineUserType.Consumer:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.pipeline.PipelineUserType.Producer:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.pipeline.make_pipeline_state:
+    count: 18
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 6
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 6
+  cutlass.range_constexpr:
+    count: 140
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/fp4_common.py: 18
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 18
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 18
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 32
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py: 21
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 33
+  cutlass.utils:
+    count: 8
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 2
+  cutlass.utils.HardwareInfo:
+    count: 1
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/utils.py: 1
+  cutlass.utils.LayoutEnum:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.utils.LayoutEnum.ROW_MAJOR:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.utils.LayoutEnum.from_tensor:
+    count: 6
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 2
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 2
+  cutlass.utils.SmemAllocator:
+    count: 7
+    files:
+      third_party/flashinfer-src/flashinfer/cute_dsl/rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_kernel.py: 2
+  cutlass.utils.blackwell_helpers.get_permutation_mnk:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.utils.blockscaled_layout.tile_atom_to_shape_SF:
+    count: 9
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 3
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 3
+  cutlass.utils.get_smem_capacity_in_bytes:
+    count: 3
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py: 1
+  cutlass.utils.hopper_helpers.get_smem_layout_atom:
+    count: 2
+    files:
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py: 1
+      third_party/flashinfer-src/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py: 1

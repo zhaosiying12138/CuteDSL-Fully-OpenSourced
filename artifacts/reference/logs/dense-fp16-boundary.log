@@ -1,0 +1,21 @@
+/home/zhaosiying/cutedsl-fully-opensourced/.venv-reference/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py:1087: DeprecationWarning: Migrated to examples/CuTeDSL/helpers/static_persistent_tile_scheduler.py (BSD-3). The wheel copy will be removed in a future release.
+  tile_sched_params = utils.PersistentTileSchedulerParams(
+/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py:1293: DeprecationWarning: cute.testing.benchmark is deprecated, use cutlass.testing.benchmark instead
+  exec_time = testing.benchmark(
+/home/zhaosiying/cutedsl-fully-opensourced/third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py:1280: DeprecationWarning: cute.testing.JitArguments is deprecated, use cutlass.testing.JitArguments instead
+  return testing.JitArguments(mA_workspace, mB_workspace, mC_workspace, stream)
+Running Blackwell Geforce Dense GEMM with:
+mnkl: (4104, 2056, 512, 1)
+A dtype: Float16, B dtype: Float16, C dtype: Float16, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Tile Shape: (128, 128, 64)
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Reference checking ...
+Execution time: 459.3920111656189 microseconds per iteration
+PASS

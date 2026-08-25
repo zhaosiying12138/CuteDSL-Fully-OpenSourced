@@ -1,0 +1,215 @@
+# sm120_reference.lock.yaml — frozen SM120 conformance corpus (M0).
+#
+# Compatibility definition (the M8 release gate): every case below marked
+# required: true that is PASS in the official reference environment must also
+# PASS, byte-identical source and identical argv, in the self environment
+# (no official CuTeDSL wheel installed).
+#
+# Capture tool: tools/capture_reference.py (official env only)
+# Validation tool: tools/run_sm120_validation.py (self env only)
+
+schema: 1
+corpus:
+  cutlass_commit: 7107b05535f8977f5ecb9d01ee203205b1fd9bc4
+  blockscaled_dispatch:
+    # (a,b,sf,vec) -> mma op   [from blockscaled_gemm_dispatch.py @ pinned commit]
+    "(FP4,FP4,E4M3,16)": MmaMXF4NVF4Op   # NVFP4, tile K in {128,256}
+    "(FP4,FP4,E8M0,32)": MmaMXF4Op       # MXFP4, tile K in {128,256}
+    "(FP8,FP8,E8M0,32)": MmaMXF8Op       # MXFP8 same-dtype, tile K = 128 only
+    "(FP4,FP8,E8M0,32)": MmaMXF8F6F4Op   # mixed
+    "(FP8,FP4,E8M0,32)": MmaMXF8F6F4Op   # mixed
+
+cases:
+  # ---------------- dense_gemm (FP16/BF16 warp mma.sync, TMA, mbarrier, setmaxnreg) ----------------
+  - id: dense-fp16-default
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py
+    argv: []
+    required: true
+    features: [fp16, tile-64x64x64, tma, mbarrier, setmaxnreg]
+  - id: dense-fp16-tile-128x256x64
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py
+    argv: ["--tile_shape_mnk", "128,256,64"]
+    required: true
+    features: [fp16, tile-128x256x64]
+  - id: dense-fp16-tile-128x128x128
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py
+    argv: ["--tile_shape_mnk", "128,128,128"]
+    required: true
+    features: [fp16, tile-128x128x128]
+  - id: dense-bf16-default
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py
+    argv: ["--a_dtype", "BFloat16", "--b_dtype", "BFloat16", "--c_dtype", "BFloat16"]
+    required: true
+    features: [bf16]
+  - id: dense-fp16-major-mn
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py
+    argv: ["--a_major", "m", "--c_major", "m"]
+    required: true
+    features: [fp16, mn-major]
+  - id: dense-fp16-batch
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py
+    argv: ["--mnkl", "2048,2048,2048,4"]
+    required: true
+    features: [fp16, batch]
+  - id: dense-fp16-boundary
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py
+    argv: ["--mnkl", "4104,2056,512,1", "--tile_shape_mnk", "128,128,64"]
+    required: true
+    features: [fp16, boundary, oob]
+    note: >
+      M and N both partial-tile, 8-element aligned. 4-element-aligned shapes
+      (e.g. 4100,2044,512) FAIL the reference check in the OFFICIAL stack at
+      the pinned commit — see exclusions: dense-oob-4-aligned.
+
+  # ---------------- blockscaled cooperative ----------------
+  - id: bs-coop-nvfp4-default
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: []
+    required: true
+    features: [fp4, sf-e4m3, vec16, nvfp4, cooperative]
+  - id: bs-coop-mxfp4
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp4, sf-e8m0, vec32, mxfp4, cooperative]
+  - id: bs-coop-mxfp4-tile-k256
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32", "--tile_shape_mnk", "128,128,256"]
+    required: true
+    features: [fp4, sf-e8m0, vec32, tile-128x128x256, cooperative]
+  - id: bs-coop-fp8-e4m3
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--a_dtype", "Float8E4M3FN", "--b_dtype", "Float8E4M3FN", "--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp8-e4m3, sf-e8m0, vec32, mxfp8, cooperative]
+  - id: bs-coop-fp8-e5m2
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--a_dtype", "Float8E5M2", "--b_dtype", "Float8E5M2", "--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp8-e5m2, sf-e8m0, vec32, mxfp8, cooperative]
+  - id: bs-coop-mixed-fp4-fp8
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--a_dtype", "Float4E2M1FN", "--b_dtype", "Float8E4M3FN", "--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp4xfp8-mixed, sf-e8m0, vec32, mxf8f6f4, cooperative]
+  - id: bs-coop-mixed-fp8-fp4
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--a_dtype", "Float8E4M3FN", "--b_dtype", "Float4E2M1FN", "--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp8xfp4-mixed, sf-e8m0, vec32, mxf8f6f4, cooperative]
+  - id: bs-coop-epi-64x32
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--epi_tile", "64,32"]
+    required: true
+    features: [fp4, sf-e4m3, vec16, epi-64x32, cooperative]
+  - id: bs-coop-batch
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--mnkl", "1024,1024,1024,3"]
+    required: true
+    features: [fp4, sf-e4m3, vec16, batch, cooperative]
+  - id: bs-coop-boundary
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--mnkl", "512,784,256,1"]
+    required: true
+    features: [fp4, sf-e4m3, vec16, boundary, oob, cooperative]
+    note: >
+      N=784 gives a partial epilogue tile with valid alignment. Shapes not
+      satisfying the demo's alignment check (e.g. 500,777) are rejected
+      upstream with "Invalid tensor alignment".
+  - id: bs-coop-illegal-fp8-tile-k256
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py
+    argv: ["--a_dtype", "Float8E4M3FN", "--b_dtype", "Float8E4M3FN", "--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32", "--tile_shape_mnk", "128,128,256"]
+    required: true
+    expected_fail: true          # validate_blockscaled_args must reject FP8 with tile-K 256
+    features: [negative, fp8, illegal-combo, cooperative]
+
+  # ---------------- blockscaled ping-pong ----------------
+  - id: bs-pp-nvfp4-default
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+    argv: []
+    required: true
+    features: [fp4, sf-e4m3, vec16, nvfp4, pingpong]
+  - id: bs-pp-mxfp4
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+    argv: ["--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp4, sf-e8m0, vec32, mxfp4, pingpong]
+  - id: bs-pp-fp8-e4m3
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+    argv: ["--a_dtype", "Float8E4M3FN", "--b_dtype", "Float8E4M3FN", "--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp8-e4m3, sf-e8m0, vec32, mxfp8, pingpong]
+  - id: bs-pp-fp8-e5m2
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+    argv: ["--a_dtype", "Float8E5M2", "--b_dtype", "Float8E5M2", "--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp8-e5m2, sf-e8m0, vec32, mxfp8, pingpong]
+  - id: bs-pp-mixed-fp4-fp8
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+    argv: ["--a_dtype", "Float4E2M1FN", "--b_dtype", "Float8E4M3FN", "--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32"]
+    required: true
+    features: [fp4xfp8-mixed, sf-e8m0, vec32, mxf8f6f4, pingpong]
+  - id: bs-pp-epi-64x32
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+    argv: ["--epi_tile", "64,32"]
+    required: true
+    features: [fp4, sf-e4m3, vec16, epi-64x32, pingpong]
+  - id: bs-pp-tile-k256
+    source_path: third_party/cutlass/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_pingpong.py
+    argv: ["--sf_dtype", "Float8E8M0FNU", "--sf_vec_size", "32", "--tile_shape_mnk", "128,128,256"]
+    required: false
+    excluded: true
+    exclusion_reason: >
+      Official ping-pong example hits an internal MLIR verifier error
+      ("coord and shape of view are weakly congruent") for MXFP4 + tile-K 256
+      at the pinned commit; the cooperative variant (bs-coop-mxfp4-tile-k256)
+      covers this configuration. Evidence: artifacts/reference/logs/bs-pp-tile-k256.log
+    features: [fp4, sf-e8m0, vec32, tile-128x128x256, pingpong, excluded]
+
+  # ---------------- FlashInfer system tests ----------------
+  # Operators run UNMODIFIED from third_party/flashinfer-src @ 9d33a28e
+  # (fetched by tools/fetch_third_party.sh). We run FlashInfer's own pytest
+  # suites for these operators — original files, original reference checks.
+  - id: fi-rmsnorm-fp4quant
+    source_path: tests/norm/test_rmsnorm_fp4_quant_cute_dsl.py
+    cwd: third_party/flashinfer-src
+    runner: pytest
+    argv: ["-q"]
+    required: true
+    features: [flashinfer, rmsnorm, fp4-quant, memory-bound, nvfp4, mxfp4]
+  - id: fi-add-rmsnorm-fp4quant
+    source_path: tests/norm/test_add_rmsnorm_fp4_quant_cute_dsl.py
+    cwd: third_party/flashinfer-src
+    runner: pytest
+    argv: ["-q"]
+    required: true
+    features: [flashinfer, add-rmsnorm, fp4-quant, memory-bound]
+  - id: fi-b12x-moe
+    source_path: tests/moe/test_b12x_fused_moe.py
+    cwd: third_party/flashinfer-src
+    runner: pytest
+    argv: ["-q", "-k", "TestB12xFunctional"]
+    required: true
+    features: [flashinfer, moe, w4a16-fp4, warp-mma, cpasync]
+
+# ----------------------------------------------------------------------------
+# Exclusions — configurations the OFFICIAL stack itself cannot pass at the
+# pinned commits. Each carries evidence. The self stack is NOT required to
+# pass these either; matching official behavior (including these failures,
+# where deterministic) is the compatibility contract.
+# ----------------------------------------------------------------------------
+exclusions:
+  - id: dense-oob-4-aligned
+    reason: >
+      dense_gemm.py reference check FAILS for GEMM shapes whose M or N is
+      4-element-aligned but not 8-element-aligned (e.g. --mnkl 4100,2044,512
+      or 4096,2052,512): ~99% of elements mismatch. 8-element-aligned
+      partial tiles (4104/2056) PASS. Boundary coverage in the corpus uses
+      8-aligned shapes.
+    evidence: artifacts/reference/results.json (dense-fp16-boundary probe history)
+  - id: bs-pp-tile-k256
+    reason: >
+      Ping-pong + MXFP4 + tile-K 256 hits an official MLIR verifier error
+      ("coord and shape of view are weakly congruent"). See case note above.
+    evidence: artifacts/reference/logs/bs-pp-tile-k256.log
+
