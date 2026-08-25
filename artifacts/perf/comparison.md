@@ -34,3 +34,15 @@ per CTA. The dominant remaining gaps to the official 43 TFLOP/s dense GEMM:
 N-direction atom tiling (128-wide), multi-warp (8-12 warps), deeper stages,
 warp specialization. Each is an additive step on the now-verified pipeline
 skeleton.
+
+## Self-stack wide-N pipelined TMA GEMM (64x64 tile, 8 warps, 2-stage)
+
+| Shape (block-diagonal useful) | Time | Useful GFLOP/s |
+|---|---|---|
+| 128x128x512 | 0.014 ms | 1164.6 |
+| 128x128x1024 | 0.025 ms | 1360.6 |
+
+25x over the narrow-N pipeline kernel (53.5 → 1360.6) from N-atom tiling
++ 8-warp organization alone. Remaining to official 43 TFLOP/s: persistent
+scheduling (grid-stride over many tiles), warp specialization (producer
+warp), deeper stages, larger K tiles, TMA multicast.

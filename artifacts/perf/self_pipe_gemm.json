@@ -1,10 +1,10 @@
 {
   "512": {
-    "ms": 0.0788,
-    "gflops_useful": 26.6
+    "ms": 0.0144,
+    "gflops_useful": 1164.6
   },
   "1024": {
-    "ms": 0.0784,
-    "gflops_useful": 53.5
+    "ms": 0.0247,
+    "gflops_useful": 1360.6
   }
 }
