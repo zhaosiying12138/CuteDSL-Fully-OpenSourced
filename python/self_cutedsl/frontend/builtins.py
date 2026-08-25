@@ -478,3 +478,21 @@ def smem_stage(smem_arr, stage, elems_per_stage):
     v.elem = smem_arr.elem
     v.stage_offset = off
     return v
+
+
+_mma_cache = {}
+
+
+def gemm_reg(c_reg, a_frag, b_frag, i):
+    """Single-register view of gemm: returns D[i] given C[i]. Emits ONE
+    mma.sync per unique (a,b,c0..c3) tuple, caching the 4 outputs."""
+    e = _emitter()
+    key = (tuple(x.name for x in a_frag), tuple(x.name for x in b_frag),
+           _mma_group_key(c_reg, e))
+    if key in _mma_cache:
+        return _mma_cache[key][int(i)]
+    raise RuntimeError("gemm_reg requires group setup")
+
+
+def _mma_group_key(c_reg, e):
+    return c_reg.name

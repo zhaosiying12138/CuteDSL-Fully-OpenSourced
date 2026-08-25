@@ -102,6 +102,10 @@ class KernelInterpreter:
                 idx = self.eval(tgt.slice)
                 val = self.eval(node.value)
                 base.slots[int(_const_index(idx))] = val
+            elif isinstance(base, list):
+                idx = int(_const_index(self.eval(tgt.slice)))
+                val = self.eval(node.value)
+                base[idx] = val
             else:
                 from .kernel_objects import KernelTensor
                 from . import builtins as _b
@@ -296,6 +300,12 @@ class KernelInterpreter:
             return tuple(self.eval(e) for e in node.elts)
         if isinstance(node, ast.List):
             return [self.eval(e) for e in node.elts]
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            lv = self.eval(node.left)
+            rv = self.eval(node.right)
+            if isinstance(lv, list) and isinstance(rv, list):
+                return lv + rv
+            return self.binop(node.op, lv, rv)
         if isinstance(node, ast.BoolOp):
             parts = [self.eval(v) for v in node.values]
             if any(isinstance(p, SSA) for p in parts):
@@ -398,7 +408,15 @@ class KernelInterpreter:
         if isinstance(base, SSA):
             return self._load_elem(base, self.eval(slice_node))
         if isinstance(base, (list, tuple)):
-            return base[int(_const_index(self.eval(slice_node)))]
+            sl = slice_node
+            if isinstance(sl, ast.Slice):
+                lo = self.eval(sl.lower) if sl.lower else None
+                hi = self.eval(sl.upper) if sl.upper else None
+                st = self.eval(sl.step) if sl.step else None
+                return base[(lo if lo is None else int(_const_index(lo))):
+                            (hi if hi is None else int(_const_index(hi))):
+                            (st if st is None else int(_const_index(st)))]
+            return base[int(_const_index(self.eval(sl)))]
         from . import builtins as _bb
 
         if isinstance(base, _bb.SmemArray):
