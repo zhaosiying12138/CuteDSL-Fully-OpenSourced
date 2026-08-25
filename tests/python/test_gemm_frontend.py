@@ -82,7 +82,6 @@ def warp_gemm16816_kernel(
 
 
 @pytest.mark.sm120
-@pytest.mark.wip  # frontend fragment-layout mismatch under debug; infra complete
 @pytest.mark.parametrize("M,N,K", [(64, 64, 64), (128, 128, 256), (32, 64, 96)])
 def test_warp_gemm(M, N, K):
     cutlass.cuda.initialize_cuda_context()
@@ -94,11 +93,13 @@ def test_warp_gemm(M, N, K):
 
     @cute.jit
     def run(a, b, c, k_tiles: cutlass.Int32, K: cutlass.Constexpr,
-            N: cutlass.Constexpr, M: cutlass.Constexpr):
+            N: cutlass.Constexpr, M: cutlass.Constexpr,
+            LDA: cutlass.Constexpr, LDB: cutlass.Constexpr):
         warp_gemm16816_kernel(a, b, c, k_tiles, K, N, LDA, LDB).launch(
             grid=[(M // 16) * (N // 8), 1, 1], block=[32, 1, 1])
 
-    run(from_dlpack(a), from_dlpack(b), from_dlpack(c), K // 16, K, N, M)
+    run(from_dlpack(a), from_dlpack(b), from_dlpack(c), K // 16, K, N, M,
+         LDA=a.stride(0), LDB=b.stride(0))
     torch.cuda.synchronize()
 
     expected = torch.matmul(a.float(), b.float())

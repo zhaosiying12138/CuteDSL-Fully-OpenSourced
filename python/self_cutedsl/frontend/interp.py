@@ -428,20 +428,21 @@ class KernelInterpreter:
     def _load_elem(self, base: SSA, idx, elem=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript load needs a pointer, got {base!r}"
-        p = self.emitter.gep(base, idx)
-        if getattr(elem, "name", "") == "f16":
+        ety = "f16" if getattr(elem, "name", "") == "f16" else "f32"
+        p = self.emitter.gep(base, idx, ety)
+        if ety == "f16":
             return self.emitter.load_gmem_f16(p)
         return self.emitter.load_f32(p)
 
     def _store_elem(self, base: SSA, idx, val, elem=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript store needs a pointer, got {base!r}"
-        p = self.emitter.gep(base, idx)
+        ety = "f16" if getattr(elem, "name", "") == "f16" else "f32"
+        p = self.emitter.gep(base, idx, ety)
         if isinstance(val, (int, float)):
-            ty = "f16" if getattr(elem, "name", "") == "f16" else "f32"
             v = float(val)
-            val = self.emitter.ssa(ty, f"arith.constant {v if ty == 'f32' else v} : {ty}")
-        if getattr(elem, "name", "") == "f16":
+            val = self.emitter.ssa(ety, f"arith.constant {v} : {ety}")
+        if ety == "f16":
             self.emitter.store_smem_f16(val, p) if p.type.startswith("!llvm.ptr<3") else \
                 self.emitter.raw(f"llvm.store {val.name}, {p.name} : f16, !llvm.ptr<1>")
             return

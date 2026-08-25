@@ -139,9 +139,19 @@ class JitFunction:
         return bound, tuple(key_parts), tensors
 
     # ------------------------------------------------------------- __call__
-    def __call__(self, *args):
+    def __call__(self, *args, **kwargs):
         if _host_trace.get("active") is not None:
             raise InterpError("nested @cute.jit call unsupported")
+        if kwargs:
+            # constexpr kwargs: fill trailing params by name
+            by_name = {p.name: p for p in self._params}
+            for k, v in kwargs.items():
+                if k not in by_name:
+                    raise TypeError(f"unexpected kwarg {k!r}")
+                by_name[k].default = _as_constexpr(v)
+        args = list(args)
+        while len(args) < len(self._params):
+            args.append(self._params[len(args)].default)
 
         bound, key, tensors = self._bind(args)
         cached = self._cache.get(key)
