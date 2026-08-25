@@ -216,3 +216,21 @@ def mbarrier_try_wait_parity(bar, phase):
     from self_cutedsl.frontend import builtins
 
     builtins.mbarrier_try_wait_parity(bar, phase)
+
+
+def setmaxnreg(value, increase=True):
+    from self_cutedsl.frontend import builtins
+
+    builtins.setmaxnreg(value, increase)
+
+
+def named_barrier_arrive(id_, count):
+    from self_cutedsl.frontend import builtins
+
+    builtins.named_barrier_arrive(id_, count)
+
+
+def named_barrier_sync(id_, count):
+    from self_cutedsl.frontend import builtins
+
+    builtins.named_barrier_sync(id_, count)

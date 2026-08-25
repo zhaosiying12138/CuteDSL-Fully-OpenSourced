@@ -370,3 +370,16 @@ def make_smem_tile(name: str, count: int, element=None):
     mlir = {"f32": "f32", "f16": "f16"}.get(elem.name, "f32")
     ptr = e.smem_tile_declare(name, int(count), mlir)
     return SmemArray(ptr, int(count), elem)
+
+
+def setmaxnreg(value: int, increase: bool = True):
+    e = _emitter()
+    e.setmaxregister(value, increase)
+
+
+def named_barrier_arrive(id_: int, count: int):
+    _emitter().named_barrier_arrive("nb", id_, count)
+
+
+def named_barrier_sync(id_: int, count: int):
+    _emitter().named_barrier_sync(id_, count)

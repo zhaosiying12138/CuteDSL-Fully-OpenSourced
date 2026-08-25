@@ -315,6 +315,17 @@ class KernelEmitter:
             self.smem_globals.append(line)
         return self.ssa("!llvm.ptr<3>", f"llvm.mlir.addressof @{name} : !llvm.ptr<3>")
 
+    def setmaxregister(self, value: int, increase: bool) -> None:
+        act = "increase" if increase else "decrease"
+        self.raw(f"nvvm.setmaxregister {act} {int(value)}")
+
+    def named_barrier_arrive(self, name: str, id_: int, count: int) -> None:
+        """bar.arrive with an immediate barrier id (warp specialization)."""
+        self.raw(f'nvvm.inline_ptx "bar.arrive {int(id_)}, {int(count)};"')
+
+    def named_barrier_sync(self, id_: int, count: int) -> None:
+        self.raw(f'nvvm.inline_ptx "bar.sync {int(id_)}, {int(count)};"')
+
     def tma_desc_param(self, name: str) -> SSA:
         """Mark a kernel param as a TMA descriptor pointer (!llvm.ptr)."""
         return SSA("!llvm.ptr", 0, "tma_desc")
