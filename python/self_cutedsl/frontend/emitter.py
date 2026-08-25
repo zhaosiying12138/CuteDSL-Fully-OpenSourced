@@ -105,6 +105,32 @@ class KernelEmitter:
     def store_f32(self, v: SSA, p: SSA) -> None:
         self.raw(f"llvm.store {v.name}, {p.name} : f32, !llvm.ptr<1>")
 
+    # -- vectorized access (128-bit path for aligned contiguous values) ------
+    def load_vec_f32(self, p: SSA, width: int) -> SSA:
+        # explicit alignment lets NVPTX emit ld.global.v4 instead of 4x b32
+        return self.ssa(f"vector<{width}xf32>",
+                        f"llvm.load {p.name} {{alignment = {width * 4} : i64}}"
+                        f" : !llvm.ptr<1> -> vector<{width}xf32>")
+
+    def store_vec_f32(self, v: SSA, p: SSA, width: int) -> None:
+        self.raw(f"llvm.store {v.name}, {p.name} {{alignment = {width * 4} : i64}}"
+                 f" : vector<{width}xf32>, !llvm.ptr<1>")
+
+    def lane_f32(self, vec: SSA, lane: int) -> SSA:
+        c = self.ssa("i32", f"arith.constant {lane} : i32")
+        return self.ssa("f32", f"llvm.extractelement {vec.name}[{c.name} : i32] : vector<4xf32>"
+                        if width_of(vec) == 4 else
+                        f"llvm.extractelement {vec.name}[{c.name} : i32] : vector<{width_of(vec)}xf32>",
+                        "float32")
+
+    def undef_vec_f32(self, width: int) -> SSA:
+        return self.ssa(f"vector<{width}xf32>", f"llvm.mlir.undef : vector<{width}xf32>")
+
+    def insert_lane_f32(self, v: SSA, vec: SSA, lane: int) -> SSA:
+        c = self.ssa("i32", f"arith.constant {lane} : i32")
+        return self.ssa(vec.type,
+                        f"llvm.insertelement {v.name}, {vec.name}[{c.name} : i32] : {vec.type}")
+
     # -- builtins -------------------------------------------------------------
     def thread_id(self, axis: str) -> SSA:
         return self.ssa("index", f"gpu.thread_id {axis}", "index")
@@ -115,7 +141,10 @@ class KernelEmitter:
     def block_dim(self, axis: str) -> SSA:
         return self.ssa("index", f"gpu.block_dim {axis}", "index")
 
+    uses_printf = False
+
     def printf(self, fmt_c: str, args: list[SSA]) -> None:
+        self.uses_printf = True
         escaped = fmt_c.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\0A")
         if args:
             ops = ", ".join(a.name for a in args)
@@ -139,3 +168,9 @@ class KernelEmitter:
             "}",
         ]
         return "\n".join(lines) + "\n"
+
+
+def width_of(vec: SSA) -> int:
+    # "vector<4xf32>" -> 4
+    t = vec.type
+    return int(t.split("<")[1].split("x")[0])

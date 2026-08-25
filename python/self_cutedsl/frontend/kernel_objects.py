@@ -67,6 +67,7 @@ class Fragment:
         self.count = count
         self.dtype = dtype              # ElementType
         self.slots: dict[int, SSA] = {}
+        self.vecs: list = []            # vector-granular values (perf path)
         self.name = name
 
     @property
@@ -74,9 +75,14 @@ class Fragment:
         return (self.count,)
 
     def load(self) -> "FragmentView":
+        if self.vecs:
+            return FragmentView([], vecs=list(self.vecs))
         return FragmentView([self.slots[i] for i in range(self.count)])
 
     def store(self, view: "FragmentView"):
+        if view.vecs:
+            self.vecs = list(view.vecs)
+            return
         for i in range(self.count):
             self.slots[i] = view.values[i]
 
@@ -86,10 +92,11 @@ class Fragment:
 
 
 class FragmentView:
-    """Result of Fragment.load(): a vector of SSA values."""
+    """Result of Fragment.load(): scalar SSAs or vector-granular SSAs."""
 
-    def __init__(self, values: list[SSA]):
-        self.values = values
+    def __init__(self, values=None, vecs=None):
+        self.values = values or []
+        self.vecs = vecs or []
 
     def __add__(self, other: "FragmentView") -> "FragmentView":
         raise NotImplementedError("interpreter handles FragmentView arithmetic")

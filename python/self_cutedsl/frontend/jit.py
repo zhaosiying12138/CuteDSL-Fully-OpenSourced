@@ -162,10 +162,12 @@ class JitFunction:
                     grid=rec.grid,
                     block=rec.block,
                 )
+                manifest.uses_printf = rec.emitter.uses_printf
                 plans.append((jit, manifest, rec.abi))
             cached = plans
             self._cache[key] = plans
 
+        needs_sync = False
         for jit, manifest, abi in cached:
             vals = []
             for entry in abi:
@@ -174,7 +176,12 @@ class JitFunction:
                 else:
                     vals.append(_host_trace_runtime[entry[1]])
             jit.launch(manifest, *vals)
-        DriverJit.synchronize_ctx()
+            needs_sync = needs_sync or getattr(manifest, "uses_printf", False)
+        if needs_sync:
+            # device printf FIFO flushes at the next context sync point
+            DriverJit.synchronize_ctx()
+        # NOTE: no ctx-wide sync otherwise — launches are stream-ordered on
+        # the default stream; readback paths synchronize explicitly.
 
     def _trace(self, bound, args):
         src = textwrap.dedent(_strip_decorators(inspect.getsource(self.fn)))

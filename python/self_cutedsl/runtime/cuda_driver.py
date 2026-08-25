@@ -60,6 +60,8 @@ class LaunchManifest:
 class DriverJit:
     """Owns CUDA init + one module loaded from textual PTX."""
 
+    _func_cache: dict = {}
+
     def __init__(self, ptx: str | bytes):
         if isinstance(ptx, str):
             ptx = ptx.encode()
@@ -78,8 +80,12 @@ class DriverJit:
 
     def launch(self, manifest: LaunchManifest, *args: Any,
                stream=None, grid=None, block=None) -> None:
-        err, func = cu.cuModuleGetFunction(self._mod, manifest.entry.encode())
-        _check(err, "cuModuleGetFunction")
+        key = manifest.entry
+        func = DriverJit._func_cache.get(key)
+        if func is None:
+            err, func = cu.cuModuleGetFunction(self._mod, manifest.entry.encode())
+            _check(err, "cuModuleGetFunction")
+            DriverJit._func_cache[key] = func
         grid = grid or manifest.grid
         block = block or manifest.block
         packed = _pack_args(manifest, args)

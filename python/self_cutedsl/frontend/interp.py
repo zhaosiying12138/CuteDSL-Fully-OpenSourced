@@ -347,6 +347,12 @@ class KernelInterpreter:
         if isinstance(lhs, _FV) and isinstance(rhs, _FV):
             if not isinstance(op, ast.Add):
                 raise InterpError("only FragmentView + FragmentView supported")
+            if lhs.vecs and rhs.vecs:
+                vecs = []
+                for x, y in zip(lhs.vecs, rhs.vecs):
+                    vecs.append(self.emitter.ssa(
+                        x.type, f"arith.addf {x.name}, {y.name} : {x.type}"))
+                return _FV(vecs=vecs)
             vals = []
             for x, y in zip(lhs.values, rhs.values):
                 vals.append(self.emitter.ssa(x.type, f"arith.addf {x.name}, {y.name} : {x.type}"))
