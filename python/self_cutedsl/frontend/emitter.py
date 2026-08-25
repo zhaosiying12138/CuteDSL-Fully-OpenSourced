@@ -273,8 +273,13 @@ class KernelEmitter:
         self.raw(f"nvvm.mbarrier.arrive.expect_tx {bar.name}, {c.name} "
                  f": !llvm.ptr<3>, i32 -> i64")
 
-    def mbarrier_try_wait_parity(self, bar: SSA, phase: int) -> None:
-        p = self.ssa("i32", f"arith.constant {int(phase)} : i32")
+    def mbarrier_try_wait_parity(self, bar: SSA, phase) -> None:
+        if isinstance(phase, SSA):
+            p = phase
+            if p.type != "i32":
+                p = self.ssa("i32", f"arith.index_cast {phase.name} : {phase.type} to i32")
+        else:
+            p = self.ssa("i32", f"arith.constant {int(phase)} : i32")
         t = self.ssa("i32", "arith.constant 100000000 : i32")
         self.raw(f"nvvm.mbarrier.try_wait.parity {bar.name}, {p.name}, {t.name} "
                  f": !llvm.ptr<3>, i32, i32")
@@ -285,6 +290,9 @@ class KernelEmitter:
         for c in coords:
             if isinstance(c, int):
                 cs.append(self.ssa("i32", f"arith.constant {int(c)} : i32"))
+            elif isinstance(c, SSA) and c.type != "i32":
+                cs.append(self.ssa("i32",
+                        f"arith.index_cast {c.name} : {c.type} to i32"))
             else:
                 cs.append(c)
         ops = ", ".join(x.name for x in cs)

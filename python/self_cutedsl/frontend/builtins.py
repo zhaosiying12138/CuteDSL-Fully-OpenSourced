@@ -300,9 +300,9 @@ def ldmatrix(smem: SmemArray, row_ssa, col_elems: int = 0, num: int = 4, trans: 
 
 
 def make_tiled_mma(atom, atom_layout=None):
-    from .tiled import TiledMma
+    from .cute_objects import TiledMma, MmaF16BF16OpAtom
 
-    return TiledMma(atom)
+    return TiledMma(MmaF16BF16OpAtom(), atom_layout)
 
 
 def gemm(tiled_mma, acc, a_frag, b_frag):
@@ -383,3 +383,68 @@ def named_barrier_arrive(id_: int, count: int):
 
 def named_barrier_sync(id_: int, count: int):
     _emitter().named_barrier_sync(id_, count)
+
+
+# ------------------------------------------------------------------ TMA atom object model (M6)
+def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None):
+    """Host-side (jit body) TMA atom construction, dense_gemm-style.
+
+    gmem_tensor: TensorMeta (or CUtensorMapView.source meta) — its shape
+    plus the smem tile layout define the box; the kernel-side descriptor
+    pointer comes from the TmaTensor kernel param at launch.
+    """
+    from .cute_objects import TmaAtom, make_layout, _flatten
+    from .meta import TensorMeta
+    from ..runtime.tensor_map import TensorMapRecipe, CUtensorMapView
+
+    if hasattr(smem_layout_or_tensor, "layout"):
+        smem_lay = smem_layout_or_tensor.layout
+    else:
+        smem_lay = smem_layout_or_tensor
+    box_slow = _flatten(smem_lay.shape)[:2]
+    box = tuple(reversed(box_slow))
+
+    meta = gmem_tensor
+    if isinstance(gmem_tensor, CUtensorMapView):
+        meta = None
+        recipe = gmem_tensor.recipe
+    elif isinstance(gmem_tensor, TensorMeta):
+        import torch as _t
+        dt = {"f16": _t.float16, "f32": _t.float32,
+              "bf16": _t.bfloat16}.get(gmem_tensor.element_type.name, _t.float32)
+        m, n = gmem_tensor.shape[0], gmem_tensor.shape[1]
+        recipe = TensorMapRecipe(dtype=dt, shape=(m, n),
+                                 strides_elems=(n, 1), box=box)
+    else:
+        recipe = None
+    atom = TmaAtom(op, None, cta_layout or make_layout((1, 1)), smem_lay, box)
+    atom.recipe = recipe
+    return atom, None  # (atom, tma_tensor placeholder — host view only)
+
+
+def tma_partition(atom, cta_coord, cta_layout, smem_grouped, gmem_grouped):
+    from .cute_objects import TmaPartitioned
+
+    return TmaPartitioned(smem_grouped, gmem_grouped, cta_coord, atom.box)
+
+
+def copy(atom_or_view, *rest, mbarrier=None, pred=None):
+    """cute.copy dispatch: TMA partitioned pair -> cp.async.bulk.tensor."""
+    from .cute_objects import TmaPartitioned, TmaAtom
+
+    e = _emitter()
+    if isinstance(atom_or_view, TmaPartitioned):
+        p = atom_or_view
+        if mbarrier is None:
+            raise ValueError("TMA partitioned copy needs mbarrier=")
+        coords = []
+        c = p.cta_coord_ssa
+        coords.append(c if not isinstance(c, int) else e.ssa("i32", f"arith.constant {int(c)} : i32"))
+        coords.append(e.ssa("i32", "arith.constant 0 : i32"))
+        smem = getattr(p.smem_view, "ptr", None) or getattr(p.smem_view, "base", None)
+        desc = getattr(p, "desc_ptr", None)
+        if desc is None:
+            raise ValueError("partitioned copy needs desc_ptr (set by kernel glue)")
+        e.tma_load(smem, desc, mbarrier, coords)
+        return
+    raise NotImplementedError(f"copy on {type(atom_or_view)}")

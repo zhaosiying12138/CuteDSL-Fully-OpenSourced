@@ -81,7 +81,10 @@ class _KernelCallStub:
         abi = []
         for p in kf._params:
             if p.kind == "tma":
-                abi.append(("tma", p.name))
+                v = arg_values[p.name]
+                names = _host_trace.get("tensor_names", {})
+                jit_name = names.get(id(v), p.name)
+                abi.append(("tma", jit_name))
             elif p.kind == "tensor":
                 v = arg_values[p.name]
                 if _is_coord_meta(v):
@@ -132,6 +135,7 @@ class JitFunction:
                 bound[p.name] = v
                 tm = _as_tma_host(v)
                 _host_trace_tma[p.name] = tm["view"]
+                _host_trace.setdefault("tensor_names", {})[id(v)] = p.name
                 key_parts.append((p.name, "tma", repr(tm["recipe"])))
             elif p.kind == "tensor" or _is_tensor_value(v):
                 # official jit params are often unannotated; bind by value
