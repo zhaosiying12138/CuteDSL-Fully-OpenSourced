@@ -89,6 +89,7 @@ def persistent_gemm_kernel(mA: cute.TmaTensor, mB: cute.TmaTensor,
                 cute.mbarrier_try_wait_parity(bar0, parity)
             else:
                 cute.mbarrier_try_wait_parity(bar1, parity)
+            cute.fence_proxy()
             cute.sync_threads()
 
             for kk in range(TILE_K // 16):
@@ -142,6 +143,7 @@ def persistent_gemm_kernel(mA: cute.TmaTensor, mB: cute.TmaTensor,
             sC[(row + 8) * TILE_N + col + 1] = sub[3]
         cute.sync_threads()
         if EPI_TMA:
+            cute.fence_proxy()
             if is0:
                 cute.tma_store(mC, sC, [tn * TILE_N, tm * TILE_M])
         else:
@@ -177,6 +179,10 @@ def run_persistent_gemm(a, b, c, m_ctas: cutlass.Int32, k_tiles: cutlass.Int32,
     (256, 128, 128, 8),    # 8 tiles / 8 CTAs
     (256, 256, 128, 16),   # 16 tiles / 16 CTAs
     (128, 256, 256, 8),
+    (256, 128, 128, 4),    # MULTI-TILE per CTA (2 tiles)
+    (256, 128, 256, 4),    # multi-tile + k_tiles=4 refills
+    (256, 256, 128, 4),    # 16 tiles / 4 CTAs (4 tiles each)
+    (512, 512, 512, 64),   # full occupancy wave
 ])
 def test_persistent_tma_gemm(M, N, K, G):
     cutlass.cuda.initialize_cuda_context()

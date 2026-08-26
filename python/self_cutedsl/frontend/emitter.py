@@ -265,6 +265,19 @@ class KernelEmitter:
         c = self.ssa("i32", f"arith.constant {int(count)} : i32")
         self.raw(f"nvvm.mbarrier.init {bar.name}, {c.name} : !llvm.ptr<3>, i32")
 
+    def mbarrier_init_single_thread(self, bar: SSA, count: int,
+                                    tid: SSA) -> None:
+        """mbarrier.init executed by thread 0 only (PTX: init by multiple
+        threads on the same object is UB). tid: index SSA of thread_id x."""
+        c = self.ssa("i32", f"arith.constant {int(count)} : i32")
+        z = self.ssa("index", "arith.constant 0 : index")
+        p = self.ssa("i1", f"arith.cmpi eq, {tid.name}, {z.name} : index")
+        self.raw(f"scf.if {p.name} {{")
+        self._depth += 1
+        self.raw(f"nvvm.mbarrier.init {bar.name}, {c.name} : !llvm.ptr<3>, i32")
+        self._depth -= 1
+        self.raw("}")
+
     def fence_mbarrier_init(self) -> None:
         self.raw("nvvm.fence.mbarrier.init")
 
@@ -336,6 +349,11 @@ class KernelEmitter:
 
     def named_barrier_sync(self, id_: int, count: int) -> None:
         self.raw(f'nvvm.inline_ptx "bar.sync {int(id_)}, {int(count)};"')
+
+    def fence_proxy_async_shared(self) -> None:
+        """Order generic SMEM accesses vs the async (TMA) proxy."""
+        self.raw("nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, "
+                 "space = #nvvm.shared_space<cta>}")
 
     def tma_desc_param(self, name: str) -> SSA:
         """Mark a kernel param as a TMA descriptor pointer (!llvm.ptr)."""

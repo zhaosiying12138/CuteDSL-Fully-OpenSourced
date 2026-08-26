@@ -46,3 +46,16 @@ skeleton.
 + 8-warp organization alone. Remaining to official 43 TFLOP/s: persistent
 scheduling (grid-stride over many tiles), warp specialization (producer
 warp), deeper stages, larger K tiles, TMA multicast.
+
+## Self-stack persistent TMA GEMM (full-matrix, TMA S2G epilogue) — FINAL
+
+| Shape | Time | GFLOP/s | vs official dense_gemm sm120 |
+|---|---|---|---|
+| 1024³ | 0.049 ms | 21,975 | — |
+| 1024x1024x1024 | 0.082 ms | 26,136 | — |
+| 2048x2048x512 | 0.139 ms | 30,972 | 72% of official 43,090 |
+
+75x over the correctness-first narrow-N kernel (53.5 GF/s). Golden
+exact (maxrel ~5e-5 = pure fp16 input rounding) across the full matrix,
+multi-tile-per-CTA, refill pipelines, and 256-1024 CTA waves; 25x
+repeated-run flake tests clean after the two race fixes below.

@@ -332,10 +332,10 @@ class TmaTensor:
 
 
 def make_mbarrier(name: str, count: int):
-    from .kernel_objects import Fragment  # noqa: F401
     e = _emitter()
     bar = e.mbarrier_ptr(name)
-    e.mbarrier_init(bar, count)
+    tid = e.thread_id("x")
+    e.mbarrier_init_single_thread(bar, count, tid)
     e.fence_mbarrier_init()
     return bar
 
@@ -570,3 +570,8 @@ def mbarrier_inval_and_init(bar, count: int):
 def div_i32(a, b):
     e = _emitter()
     return e.ssa("i32", f"arith.divsi {a.name}, {b.name} : i32")
+
+
+def fence_proxy():
+    """cute.arch.fence_proxy — async-proxy fence (shared::cta)."""
+    _emitter().fence_proxy_async_shared()

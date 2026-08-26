@@ -312,3 +312,9 @@ def div_i32(a, b):
     from self_cutedsl.frontend import builtins
 
     return builtins.div_i32(a, b)
+
+
+def fence_proxy():
+    from self_cutedsl.frontend import builtins
+
+    builtins.fence_proxy()
