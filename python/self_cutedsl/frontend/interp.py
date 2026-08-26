@@ -111,6 +111,7 @@ class KernelInterpreter:
             tgt = node.targets[0]
             base = self.eval(tgt.value)
             from .kernel_objects import Fragment as _Frag
+            from .meta import TensorMeta as _TM
 
             if isinstance(base, _Frag):
                 idx = self.eval(tgt.slice)
@@ -137,6 +138,10 @@ class KernelInterpreter:
                     else:
                         self.emitter.raw(
                             f"llvm.store {val.name}, {p.name} : f32, !llvm.ptr<3>")
+                elif isinstance(base, _TM):
+                    # host-elementwise write through the meta's torch tensor
+                    coord = idx if isinstance(idx, (tuple, list)) else (idx,)
+                    base[tuple(int(c) for c in coord)] = val
                 else:
                     ptr = base.ptr if isinstance(base, KernelTensor) else base
                     elem = getattr(getattr(base, "meta", None), "element_type", None)

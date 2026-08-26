@@ -39,3 +39,9 @@ def const_expr(cond):
     """cutlass.const_expr(cond) — trace-time conditional; the condition is
     a python bool at trace time (official partial evaluation)."""
     return bool(cond)
+
+
+def range(n, *rest, **kw):
+    """cutlass.range — host trace loop; plain builtin semantics."""
+    return __builtins__["range"](n, *rest) if isinstance(__builtins__, dict) \
+        else __builtins__.range(n, *rest)

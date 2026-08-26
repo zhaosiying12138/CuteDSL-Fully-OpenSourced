@@ -209,11 +209,8 @@ def group_modes(tensor_or_layout, i: int, j: int):
     """Collapse modes i..j (inclusive) of the top-level shape into one."""
     lay = tensor_or_layout.layout if isinstance(tensor_or_layout, Tensor) else tensor_or_layout
     shp, str_ = _flatten(lay.shape), _flatten(lay.stride)
-    if i != 0:
-        raise NotImplementedError("group_modes from mode 0 only (as used by flagship)")
-    g = _prod(shp[i:j + 1])
+    g = _prod(shp[i:j + 1]) if i <= j else 1
     new_shape = (g,) + tuple(shp[j + 1:])
-    new_stride = tuple(str_[i:j + 1]) and _stride_for_group(shp, str_, i, j) + tuple(str_[j + 1:])
     out = Layout(new_shape, _stride_for_group(shp, str_, i, j) + tuple(str_[j + 1:]))
     if isinstance(tensor_or_layout, Tensor):
         nv = Tensor(tensor_or_layout.base, out, tensor_or_layout.element,

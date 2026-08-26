@@ -196,7 +196,19 @@ def copy(atom, src, dst, pred=None, **kw):
 
 def group_modes(x, i, j):
     from self_cutedsl.frontend import cute_objects as co
+    from self_cutedsl.frontend.meta import TensorMeta
 
+    if isinstance(x, TensorMeta):
+        # host data tensor: regroup shape/stride modes i..j into one
+        shp = list(x.shape)
+        strd = list(x.stride)
+        g = 1
+        for d in shp[i:j + 1]:
+            g *= int(d)
+        new_s = tuple(shp[:i]) + (g,) + tuple(shp[j + 1:])
+        new_d = tuple(strd[:i]) + (strd[i],) + tuple(strd[j + 1:])
+        nm = TensorMeta(x._torch, x.element_type, new_s, new_d)
+        return nm
     return co.group_modes(x, i, j)
 
 

@@ -18,6 +18,13 @@ class ElementType:
     def __repr__(self):
         return self.name
 
+    def __eq__(self, other):
+        # cutlass._DType instances compare by name (duck identity)
+        return getattr(other, "name", None) == self.name
+
+    def __hash__(self):
+        return hash(self.name)
+
     @property
     def mlir(self) -> str:
         return {"f32": "f32", "f16": "f16", "bf16": "bf16",
@@ -29,11 +36,17 @@ F16 = ElementType("f16", 16, False, True)
 BF16 = ElementType("bf16", 16, False, True)
 I32 = ElementType("i32", 32, True, False)
 I64 = ElementType("i64", 64, True, False)
+I8_ = ElementType("i8", 8, True, False)     # fp8/fp4 byte storage view
+F4E2M1_ = ElementType("Float4E2M1FN", 4, False, True)
+F8E4M3FN_ = ElementType("Float8E4M3FN", 8, False, True)
+F8E5M2_ = ElementType("Float8E5M2", 8, False, True)
+F8E8M0_ = ElementType("Float8E8M0FNU", 8, False, True)
 BOOL = ElementType("bool", 8, False, False)
 
 _TORCH_TO_ELEM = {
     "float32": F32, "float16": F16, "bfloat16": BF16,
     "int32": I32, "int64": I64, "bool": BOOL,
+    "int8": I8_, "uint8": I8_, "float8_e4m3fn": I8_, "float8_e5m2": I8_,
 }
 
 
@@ -46,9 +59,32 @@ class TensorMeta:
         self.element_type = elem
         self.shape = tuple(int(s) for s in shape)
         self.stride = tuple(int(s) for s in stride) if stride else _row_major(self.shape)
+        self._layout_cache = None
 
     def mark_layout_dynamic(self) -> "TensorMeta":
         return self  # layout dynamism is a specialization hint; same meta here
+
+    @property
+    def layout(self):
+        """Host-meta Layout view of this tensor's shape/stride."""
+        from .cute_objects import Layout as _L
+
+        if self._layout_cache is None:
+            self._layout_cache = _L(self.shape, self.stride)
+        return self._layout_cache
+
+    def _flat_index(self, coord):
+        idx = 0
+        c = coord if isinstance(coord, tuple) else (coord,)
+        for ci, di in zip(c, self.stride):
+            idx += int(ci) * int(di)
+        return idx
+
+    def __getitem__(self, coord):
+        return self._torch.reshape(-1)[self._flat_index(coord)]
+
+    def __setitem__(self, coord, v):
+        self._torch.reshape(-1)[self._flat_index(coord)] = v
 
     def mark_compact_shape_dynamic(self, *a, **kw):
         return self
@@ -197,6 +233,11 @@ def cute_size(x, mode=None) -> int:
             k = mode[0] if isinstance(mode, (list, tuple)) else mode
             return _prod(x.layout.shape[k])   # top-level mode entry
         return _prod(_flatten(x.layout.shape))
+    if isinstance(x, TensorMeta):
+        if mode is not None:
+            k = mode[0] if isinstance(mode, (list, tuple)) else mode
+            return _prod(x.shape[k])
+        return _prod(x.shape)
     if isinstance(x, (int, tuple)):
         return _prod(x)
     raise TypeError(f"cute.size on {type(x)}")
