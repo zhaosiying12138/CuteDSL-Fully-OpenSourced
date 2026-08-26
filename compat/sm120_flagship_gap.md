@@ -67,3 +67,25 @@ M7 blockscaled).
   self stack **and numerically verified** on the RTX 5090.
 - Performance parity with the official compiler on the elementwise
   class (101–228% across shapes).
+
+## Persistent multi-tile-per-CTA pipeline — known residual (2026-08-26)
+
+The persistent kernel skeleton (grid-stride work loop, per-tile barrier
+re-init, staged SMEM, TMA S2G epilogue) is verified golden when the grid
+covers all tiles (1 tile per CTA, incl. k_tiles=4 with refills — 5
+configurations in tests/python/test_persistent_gemm.py).
+
+With MULTIPLE tiles per CTA (m_ctas < total tiles), a deterministic
+~1% element residual appears in second tiles (bad map: specific 8-col
+stripes; repro: 256x128x128 G=4). Four phase-tracking schemes were tried
+(absolute arm counters; per-tile re-init; global-arm parity; skip/always
+trailing refills) — all analytically correct per PTX mbarrier semantics,
+residual persists identically. compute-sanitizer racecheck was attempted
+(very slow on this kernel; killed). Single-tile-per-CTA with the SAME
+refill logic is 100% golden, so the in-tile pipeline itself is sound;
+the fault is in cross-tile state (leading suspects: an interplay between
+the epilogue's async bulk-store wait scope and the barrier re-init, or
+an MLIR-level ordering issue in the nested dynamic-region emission).
+Recorded honestly; the shipped test matrix uses grid-covers-tiles until
+root-caused. dense_gemm.py unmodified-run additionally still needs the
+items below.

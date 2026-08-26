@@ -375,7 +375,8 @@ def make_smem_tile(name: str, count: int, element=None):
 
     e = _emitter()
     elem = element or F32
-    mlir = {"f32": "f32", "f16": "f16"}.get(elem.name, "f32")
+    mlir = {"f32": "f32", "f16": "f16",
+            "float32": "f32", "float16": "f16"}.get(elem.name.lower(), "f32")
     ptr = e.smem_tile_declare(name, int(count), mlir)
     return SmemArray(ptr, int(count), elem)
 
@@ -470,12 +471,7 @@ def smem_stage(smem_arr, stage, elems_per_stage):
         prod = e.idx_binop("arith.muli", stage, c) if stage.type == "index" else \
             e.idx_binop("arith.muli", e.ssa("index", f"arith.index_cast {stage.name} : i32 to index"), c)
         off = prod
-    class _Staged:
-        pass
-    v = _Staged()
-    v.ptr = smem_arr.ptr
-    v.count = int(elems_per_stage)
-    v.elem = smem_arr.elem
+    v = SmemArray(smem_arr.ptr, int(elems_per_stage), smem_arr.elem)
     v.stage_offset = off
     return v
 
@@ -496,3 +492,81 @@ def gemm_reg(c_reg, a_frag, b_frag, i):
 
 def _mma_group_key(c_reg, e):
     return c_reg.name
+
+
+def bool_to_i32(b):
+    """i1 SSA -> i32 SSA (0/1) via arith.extsi."""
+    e = _emitter()
+    if isinstance(b, bool):
+        return e.ssa("i32", f"arith.constant {1 if b else 0} : i32")
+    assert getattr(b, "type", "") == "i1"
+    return e.ssa("i32", f"arith.extsi {b.name} : i1 to i32")
+
+
+def add_i32(a, b):
+    e = _emitter()
+    if isinstance(a, int):
+        a = e.ssa("i32", f"arith.constant {a} : i32")
+    if isinstance(b, int):
+        b = e.ssa("i32", f"arith.constant {b} : i32")
+    return e.ssa("i32", f"arith.addi {a.name}, {b.name} : i32")
+
+
+def rem_i32(a, b):
+    e = _emitter()
+    if isinstance(b, int):
+        b = e.ssa("i32", f"arith.constant {b} : i32")
+    return e.ssa("i32", f"arith.remsi {a.name}, {b.name} : i32")
+
+
+def lt_i32(a, b):
+    e = _emitter()
+    if isinstance(b, int):
+        b = e.ssa("i32", f"arith.constant {b} : i32")
+    return e.ssa("i1", f"arith.cmpi slt, {a.name}, {b.name} : i32")
+
+
+def const_i32(v):
+    return _emitter().ssa("i32", f"arith.constant {int(v)} : i32")
+
+
+def idx_to_i32(v):
+    e = _emitter()
+    if isinstance(v, int):
+        return e.ssa("i32", f"arith.constant {v} : i32")
+    if v.type == "i32":
+        return v
+    return e.ssa("i32", f"arith.index_cast {v.name} : {v.type} to i32")
+
+
+def mul_i32(a, b):
+    e = _emitter()
+    return e.ssa("i32", f"arith.muli {a.name}, {b.name} : i32")
+
+
+def sub_i32(a, b):
+    e = _emitter()
+    return e.ssa("i32", f"arith.subi {a.name}, {b.name} : i32")
+
+
+def mbarrier_reinit(bar, count: int):
+    e = _emitter()
+    e.mbarrier_init(bar, count)
+    e.fence_mbarrier_init()
+
+
+def fence_and_sync():
+    e = _emitter()
+    e.fence_mbarrier_init()
+    e.barrier()
+
+
+def mbarrier_inval_and_init(bar, count: int):
+    e = _emitter()
+    e.mbarrier_init(bar, count)
+    e.fence_mbarrier_init()
+
+
+def div_i32(a, b):
+    e = _emitter()
+    return e.ssa("i32", f"arith.divsi {a.name}, {b.name} : i32")

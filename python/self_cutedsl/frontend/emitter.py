@@ -305,6 +305,9 @@ class KernelEmitter:
         for c in coords:
             if isinstance(c, int):
                 cs.append(self.ssa("i32", f"arith.constant {int(c)} : i32"))
+            elif isinstance(c, SSA) and c.type != "i32":
+                cs.append(self.ssa("i32",
+                        f"arith.index_cast {c.name} : {c.type} to i32"))
             else:
                 cs.append(c)
         ops = ", ".join(x.name for x in cs)

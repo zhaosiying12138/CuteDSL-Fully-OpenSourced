@@ -188,12 +188,15 @@ class KernelInterpreter:
                 for s in node.body:
                     self.exec_stmt(s)
             return
-        # dynamic bounds -> scf.for
+        # dynamic bounds -> scf.for (normalize 1-arg range to (0, n, 1))
+        if len(iter_args) == 1:
+            iter_args = [0, iter_args[0]]
         args = iter_args + [1]
         lb = self._to_index(args[0]) if not isinstance(args[0], int) else self._index_const(args[0])
         ub = self._to_index(args[1]) if not isinstance(args[1], int) else self._index_const(args[1])
         st = self._to_index(args[2]) if not isinstance(args[2], int) else self._index_const(args[2])
-        carried = self._loop_carried(node.body)
+        tgt = node.target.id if isinstance(node.target, ast.Name) else None
+        carried = self._loop_carried(node.body, tgt)
         init_vals, init_shapes = [], []
         for name in carried:
             v = self.env[name]
@@ -232,9 +235,9 @@ class KernelInterpreter:
                 self.env[name] = list(res_ssas[k:k + length])
                 k += length
 
-    def _loop_carried(self, body) -> list[str]:
-        """Names reassigned in the loop body holding non-index SSA values or
-        lists of SSAs (mma accumulators etc.)."""
+    def _loop_carried(self, body, target_name=None) -> list[str]:
+        """Names rebound in the loop body holding SSA values (any type) or
+        lists of SSAs — excluding the loop induction variable."""
         assigned = set()
 
         def walk(n):
@@ -249,11 +252,12 @@ class KernelInterpreter:
             walk(st)
         out = []
         for name in sorted(assigned):
+            if name == target_name:
+                continue
             v = self.env.get(name)
-            if isinstance(v, SSA) and v.type not in ("index", "i32", "i64"):
+            if isinstance(v, SSA):
                 out.append(name)
-            elif isinstance(v, list) and v and all(isinstance(x, SSA) for x in v) \
-                    and all(x.type not in ("index", "i32", "i64") for x in v):
+            elif isinstance(v, list) and v and all(isinstance(x, SSA) for x in v):
                 out.append(name)
         return out
 

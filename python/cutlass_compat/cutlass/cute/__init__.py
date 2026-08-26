@@ -240,3 +240,75 @@ def smem_stage(smem_arr, stage, elems_per_stage):
     from self_cutedsl.frontend import builtins
 
     return builtins.smem_stage(smem_arr, stage, elems_per_stage)
+
+
+def bool_to_i32(b):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.bool_to_i32(b)
+
+
+def add_i32(a, b):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.add_i32(a, b)
+
+
+def rem_i32(a, b):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.rem_i32(a, b)
+
+
+def lt_i32(a, b):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.lt_i32(a, b)
+
+
+def const_i32(v):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.const_i32(v)
+
+
+def idx_to_i32(v):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.idx_to_i32(v)
+
+
+def mul_i32(a, b):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.mul_i32(a, b)
+
+
+def sub_i32(a, b):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.sub_i32(a, b)
+
+
+def mbarrier_inval_and_init(bar, count):
+    from self_cutedsl.frontend import builtins
+
+    builtins.mbarrier_inval_and_init(bar, count)
+
+
+def mbarrier_reinit(bar, count):
+    from self_cutedsl.frontend import builtins
+
+    builtins.mbarrier_reinit(bar, count)
+
+
+def fence_and_sync():
+    from self_cutedsl.frontend import builtins
+
+    builtins.fence_and_sync()
+
+
+def div_i32(a, b):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.div_i32(a, b)
