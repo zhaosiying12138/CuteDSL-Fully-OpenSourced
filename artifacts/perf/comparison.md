@@ -59,3 +59,23 @@ warp), deeper stages, larger K tiles, TMA multicast.
 exact (maxrel ~5e-5 = pure fp16 input rounding) across the full matrix,
 multi-tile-per-CTA, refill pipelines, and 256-1024 CTA waves; 25x
 repeated-run flake tests clean after the two race fixes below.
+
+## S5 (2026-08-26): dense_gemm.py VERBATIM — self stack vs official compiler
+
+Same unmodified kernel source, same tile (64,64,64), same GPU, iterations=20
+after 2 warmups (official numbers re-measured today; baseline-log numbers in
+parentheses).
+
+| Shape | Official µs/iter (TF/s) | Self µs/iter (TF/s) | Self/Official |
+|---|---|---|---|
+| 128×128×128 (default) | — (tiny) | 189.0 | — |
+| 2048×2048×2048 | 321.9 (53.4) | 388.7 (44.2) | **83%** |
+| 4096×4096×4096 | 1671.9 (82.2) [baseline log: 1604.8] | 3790.7 (36.3) | **44%** |
+
+Known self-stack perf taxes (all honest, all fixable — none affect correctness):
+- ldmatrix reads from unswizzled K-major SMEM (bank conflicts; the official
+  layout uses 128B swizzle). Tax scales with K — visible in the 2048→4096 gap.
+- Epilogue TMA store waits `bulk.wait_group 0` per store (no store pipeline).
+- consumer_try_wait lowers to constant-true (the real wait still spins).
+- mbarrier waits are tight test_wait spins (no suspend hint — the driver's
+  try_wait suspend path proved unreliable; see DEVLOG 2026-08-26).
