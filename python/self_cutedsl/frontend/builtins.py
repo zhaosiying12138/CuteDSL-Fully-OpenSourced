@@ -890,8 +890,13 @@ def copy_sf(tc, src, dst):
     win = smem_stage(arr, getattr(view, "stage", 0), rows * kgs)
     soff = win.stage_offset
     regs = []
-    # blocked SMEM order from the SF TMA box: byte = (row%32)*16 +
-    # (row//32)*4 + kg  (i32-major, then i4, kg fastest)
+    # Blocked SMEM order from the SF TMA box.  Each MMA K64 block owns
+    # four scale factors per row (sf_vec=16), and all 128 rows precede
+    # the next K64 block:
+    #   byte = kb * (rows * 4) + (row%32)*16 + (row//32)*4 + kg
+    # The old ``kb * 4`` selected the next M32 quadrant instead of the
+    # next K64 block, so kg0..3 were applied twice and kg4..7 were never
+    # consumed for a 128-wide K tile.
     def _sf_off(row):
         i32p = _ixop(e, "arith.remsi", row, _ix(e, 32))
         i4p = _ixop(e, "arith.divsi", row, _ix(e, 32))
@@ -899,7 +904,7 @@ def copy_sf(tc, src, dst):
                      _ixop(e, "arith.addi",
                            _ixop(e, "arith.muli", i32p, _ix(e, 16)),
                            _ixop(e, "arith.muli", i4p, _ix(e, 4))),
-                     _ix(e, int(kb) * 4))
+                     _ix(e, int(kb) * rows * 4))
 
     if is_a:
         for i in range(2):                             # m-atoms (warp 32)

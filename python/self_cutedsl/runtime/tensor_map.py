@@ -60,6 +60,12 @@ def encode_to_bytes(recipe: TensorMapRecipe, global_address: int) -> bytes:
                for s in reversed(recipe.strides_elems[:-1])]
     box = [u32(int(b)) for b in recipe.box]
     estrides = [u32(1) for _ in recipe.shape]
+    import os as _os
+    if _os.environ.get("DG_TMA_DEBUG"):
+        import sys as _s
+        print(f"SELF_TMA rank={rank} gdim={[int(d) for d in gdim]} "
+              f"gstr={[int(x) for x in strides]} box={[int(b) for b in box]}",
+              file=_s.stderr)
     r = cu.cuTensorMapEncodeTiled(
         dt, rank, global_address, gdim, strides, box, estrides,
         cu.CUtensorMapInterleave.CU_TENSOR_MAP_INTERLEAVE_NONE,

@@ -121,25 +121,11 @@ def cute_tensor_like(data_ref, cutlass_dtype=None, aligned_alloc=False,
             # keep the f32 reference grid-aligned with what the kernel
             # consumes (official init is fp4-representable): write the
             # dequantized values back so golden einsums match
-            try:
-                lo = (packed & 0xF).float()
-                hi = (packed >> 4).float()
-                _F4 = torch.tensor([0., .5, 1., 1.5, 2., 3., 4., 6.])
-                dq = torch.stack([_F4[hi.long()], _F4[lo.long()]], dim=-1) \
-                    .reshape(tt.shape)
-                tt = dq.contiguous()
-                data_ref.copy_(dq)
-                from self_cutedsl.frontend.meta import TensorMeta, F4E2M1_
-                ct = from_dlpack(packed if False else dq)
-                pm = TensorMeta(packed, F4E2M1_,
-                                tuple(packed.shape), tuple(packed.stride()))
-                return pm, packed
-            except Exception:
-                tt = _pack_fp4(tt)
+            dq = _unpack_fp4(packed, tuple(tt.shape))
+            data_ref.copy_(dq)
             from self_cutedsl.frontend.meta import TensorMeta, F4E2M1_
-            ct = from_dlpack(tt)
-            return TensorMeta(tt, F4E2M1_,
-                              tuple(tt.shape), tuple(tt.stride())), tt
+            return TensorMeta(packed, F4E2M1_,
+                              tuple(packed.shape), tuple(packed.stride())), packed
         elif dname in ("Float8E4M3FN", "Float8E5M2", "Float8E8M0FNU"):
             td = _TORCH_OF.get(dname)
             if td is not None and td != tt.dtype:
@@ -180,30 +166,38 @@ def _pack_fp4(f32_tensor):
     the LOW nibble) — the CUTLASS fp4 storage convention."""
     import torch as _t
 
-    flat = f32_tensor.reshape(-1).to(_t.float32)
-    sign = (flat < 0).to(_t.uint8)
-    mag = flat.abs()
-    codes = _t.zeros_like(mag, dtype=_t.uint8)
-    for code, st in enumerate(_FP4_CODESTS):
-        codes[(mag >= st) & (mag <= (st + 0.25) if code < 7 else mag >= st)] = code
-    # nearest of the representable magnitudes
-    codes = _t.zeros_like(mag, dtype=_t.uint8)
-    m_np = mag.cpu().numpy()
-    import numpy as _np
-    sts = _np.array(_FP4_CODESTS)
-    idx = _np.abs(m_np[:, None] - sts[None, :]).argmin(axis=1)
-    codes = _t.from_numpy(idx.astype(_np.uint8)).to(mag.device)
+    values = f32_tensor.to(_t.float32)
+    sign = (values < 0).to(_t.uint8)
+    levels = _t.tensor(_FP4_CODESTS, dtype=_t.float32, device=values.device)
+    codes = (values.abs().unsqueeze(-1) - levels).abs().argmin(dim=-1).to(_t.uint8)
     codes = codes | (sign << 3)
-    if codes.numel() % 2:
-        codes = _t.cat([codes, _t.zeros(1, dtype=_t.uint8, device=codes.device)])
     # PTX e2m1 operand packing: element with the LOWER k index occupies
     # the HIGH nibble of each byte (cute fp4 convention)
-    packed = (codes[0::2] << 4) | codes[1::2]
-    # pack pairs along the k dimension: (m, k, l) -> (m, k/2, l)
-    shp = f32_tensor.shape
-    if len(shp) >= 2 and shp[1] % 2 == 0:
-        return packed.reshape(shp[0], shp[1] // 2, *shp[2:])
-    return packed.reshape(-1)
+    if codes.ndim >= 2 and codes.shape[1] % 2 == 0:
+        return ((codes[:, 0::2, ...] << 4) |
+                codes[:, 1::2, ...]).contiguous()
+    flat = codes.reshape(-1)
+    if flat.numel() % 2:
+        flat = _t.cat([flat, _t.zeros(1, dtype=_t.uint8, device=flat.device)])
+    return ((flat[0::2] << 4) | flat[1::2]).contiguous()
+
+
+def _unpack_fp4(packed, shape):
+    """Decode CUTLASS E2M1 storage to the exact values consumed by MMA."""
+    import torch as _t
+
+    levels = _t.tensor(_FP4_CODESTS, dtype=_t.float32, device=packed.device)
+
+    def decode(nibble):
+        magnitude = levels[(nibble & 0x7).long()]
+        return _t.where((nibble & 0x8) != 0, -magnitude, magnitude)
+
+    hi = decode(packed >> 4)
+    lo = decode(packed & 0xF)
+    if len(shape) >= 2 and shape[1] % 2 == 0:
+        # (m, k/2, ...) x pair -> (m, k, ...), with lower k first.
+        return _t.stack((hi, lo), dim=2).reshape(shape)
+    return _t.stack((hi.reshape(-1), lo.reshape(-1)), dim=1).reshape(-1)[:_t.tensor(shape).prod()].reshape(shape)
 
 
 class TensorInitType:
