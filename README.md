@@ -154,15 +154,17 @@ Honest boundaries (general properties, not shape special-cases):
 | **Persistent full-matrix TMA GEMM with TMA S2G epilogue — 9 configs, 31 TFLOP/s (72% of official)** | `tests/python/test_persistent_gemm.py` |
 | **Object model (PLAN_object_model): Python emits cute.* text; algebra owned by C++ passes** — spike + 27 tests | `tests/python/test_object_model_*.py` |
 | **S4 dense_gemm-shaped kernel from the full object model (algebra emission + trait table + pipeline driver + generalized TMA), 5 golden configs** | `tests/python/test_object_model_dense_gemm.py` |
+| **Official blockscaled cooperative kernel unmodified: NVFP4 random-SF golden for K=128 and K=256 with tile-K 128** | `tests/python/test_blockscaled_stage_model.py` |
 | PTX fingerprints: ld.global.v4, ldmatrix, mma.sync.aligned.m16n8k16, cp.async.bulk.tensor, mbarrier.* | test asserts |
 
 ### Flagship status (dense_gemm / blockscaled)
 
-**Not yet runnable unmodified.** Every hardware primitive they use is
-verified; the remaining gap is the CuTe object-model library layer
-(dynamic layout algebra in-kernel, TMA atoms/partitioning, TiledMma
-partitioning, PipelineTmaAsync driver, tile scheduler). Full inventory:
-`compat/sm120_flagship_gap.md`. Self GEMM perf trajectory: 53.5 (narrow-N pipeline) → 1,361 (wide-N
+Dense GEMM is runnable unmodified, and blockscaled cooperative NVFP4 now
+passes random-SF golden for tile-K 128 (including a second global K tile).
+The full M7 matrix is still incomplete: tile-K 256 currently hangs, and the
+ping-pong / FP8 / mixed paths have not been accepted on the self stack. Full
+inventory: `compat/sm120_flagship_gap.md`. Self GEMM perf trajectory: 53.5
+(narrow-N pipeline) → 1,361 (wide-N
 8-warp) → **30,972 GFLOP/s (persistent, full-matrix, 72% of official
 dense_gemm)** — remaining gap drivers: warp specialization (producer
 warps), deeper stages, 128-wide tiles, TMA multicast.

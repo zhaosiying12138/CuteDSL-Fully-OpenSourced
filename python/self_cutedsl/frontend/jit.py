@@ -248,7 +248,12 @@ class JitFunction:
                 manifest.uses_printf = rec.emitter.uses_printf
                 plans.append((jit, manifest, rec.abi))
             cached = plans
-            self._cache[key] = plans
+            # A host-only @cute.jit (for example the SF layout scatter)
+            # performs its work while _trace executes and has no launch plan.
+            # Caching [] would skip the Python body on every same-shaped call;
+            # the blockscaled example then initialized SFA but left SFB zero.
+            if plans:
+                self._cache[key] = plans
 
         needs_sync = False
         for jit, manifest, abi in cached:

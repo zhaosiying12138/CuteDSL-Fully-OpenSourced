@@ -66,26 +66,24 @@ def current_stream():
 def matrix(l, m_or_n, k_or_m, major, dtype, gen=None):
     """cutlass_torch.matrix(l, m, k, major, dtype) — synthetic GEMM operand.
 
-    Layout convention: returns an (m, k) or (k, m) torch CPU tensor per
-    the requested major ('k' -> row-major (m,k); 'm' -> (k,m) k-major).
+    The logical result is always ``(mode0, mode1, l)``.  ``major`` is the
+    official boolean ``is_mode0_major`` (string spellings are accepted for
+    compatibility) and changes strides, not logical shape.
     """
     import torch as _t
 
     tdtype = _TORCH_OF.get(getattr(dtype, "name", str(dtype)), _t.float16)
     l = int(l)
-    # 'k'-major A/B (m,k) and 'n'-major C (m,n) are both row-major in the
-    # (first, second) argument order; only 'm'-major transposes
-    if major in ("k", "n"):
-        shape = ((m_or_n, k_or_m) if l == 1 else (l, m_or_n, k_or_m))
-        t = _t.randn(shape, dtype=tdtype)
-    else:
-        shape = ((k_or_m, m_or_n) if l == 1 else (l, k_or_m, m_or_n))
-        t = _t.randn(shape, dtype=tdtype).contiguous()
-    if l == 1:
-        t = t.unsqueeze(-1)         # (m,k,1): einsum "mkl" needs 3 dims
-    else:
-        t = t.permute(1, 2, 0)      # (l,m,k) -> (m,k,l)
-    return t
+    # The GeForce examples also pass their axis label directly.  In their
+    # current supported surface, "m" is mode-0-major while "k"/"n" select
+    # the row-major path (C uses "n").
+    mode0_major = bool(major) if isinstance(major, bool) else major == "m"
+    storage_shape = ((l, k_or_m, m_or_n) if mode0_major
+                     else (l, m_or_n, k_or_m))
+    # CUTLASS RANDOM initialization is integer-valued with an exclusive
+    # upper bound; signed floating references use {-2,-1,0,1} by default.
+    storage = _t.randint(-2, 2, storage_shape, dtype=_t.int32).to(tdtype)
+    return storage.permute(2, 1, 0) if mode0_major else storage.permute(1, 2, 0)
 
 
 def get_workspace_count(one_workspace_bytes, warmup, iterations):
@@ -125,7 +123,7 @@ def cute_tensor_like(data_ref, cutlass_dtype=None, aligned_alloc=False,
             data_ref.copy_(dq)
             from self_cutedsl.frontend.meta import TensorMeta, F4E2M1_
             return TensorMeta(packed, F4E2M1_,
-                              tuple(packed.shape), tuple(packed.stride())), packed
+                              tuple(data_ref.shape), tuple(packed.stride())), packed
         elif dname in ("Float8E4M3FN", "Float8E5M2", "Float8E8M0FNU"):
             td = _TORCH_OF.get(dname)
             if td is not None and td != tt.dtype:

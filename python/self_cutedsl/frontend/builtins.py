@@ -505,22 +505,26 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
     shp = tuple(int(d) for d in getattr(gmem_tensor, "shape", ()))
     _w = getattr(getattr(gmem_tensor, "element_type", None), "width", 32) or 32
     is_sf = (_w == 8 and len(shp) == 6 and shp[0] == 32 and shp[1] == 4
-             and shp[2] == 4)   # flat ((32,4,4),(rm,rk,l))
+             and shp[3] == 4)   # flat ((32,4,rm),(4,rk),l)
     if isinstance(gmem_tensor, CUtensorMapView):
         meta = None
         recipe = gmem_tensor.recipe
     elif is_sf:
         # block-scaled SF in the canonical (32,4)x(4) blocked layout:
         # storage = contiguous 512B blocks; view shape (32,4,rm,4,rk,l)
-        # with strides (16,4,rk*512,1,512,l*...). Per CTA m-tile/k-tile
-        # the 1024 SF bytes (2 consecutive blocks) are contiguous ->
-        # uint8 2D recipe (rm, rk*512), box (1, 1024)
+        # with strides (16,4,rk*512,1,512,l*...).  The rank-4 recipe splits
+        # each block into two 256B halves for the TMA box.
         import torch as _t
         strd = tuple(int(x) for x in getattr(gmem_tensor, "stride", ()))
-        rm, rk, l = shp[3], shp[4], shp[5]
+        rm, rk, l = shp[2], shp[4], shp[5]
         # permuted view (32,4,rm,4,rk,l): rm is mode 2 (stride rk*512);
         # storage is the contiguous (l,rm,rk,32,4,4) blocked layout
         rm_str = (strd[2] if strd and strd[2] else None) or rk * 512
+        # Split each 512-byte (128 rows x 4 SF) block into two contiguous
+        # 256-byte halves.  Non-innermost TMA global strides must describe
+        # the real storage (and satisfy CUDA alignment); using 4 here made
+        # the dimensions overlap and becomes an invalid descriptor once the
+        # logical FP4/SF shapes are represented correctly.
         recipe = TensorMapRecipe(dtype=_t.uint8,
                                  shape=(rm, rk, 2, 256),
                                  strides_elems=(rm_str, 512, 256, 1),
@@ -886,25 +890,27 @@ def copy_sf(tc, src, dst):
     which = "A" if is_a else "B"
     l4 = _ixop(e, "arith.divsi", lane, _ix(e, 4))      # lane//4
     l2 = _ixop(e, "arith.remsi", lane, _ix(e, 2))      # lane%2 (row select)
-    # stage window: rows*kgs bytes per stage (SF arrays are byte-typed)
     win = smem_stage(arr, getattr(view, "stage", 0), rows * kgs)
     soff = win.stage_offset
     regs = []
-    # Blocked SMEM order from the SF TMA box.  Each MMA K64 block owns
-    # four scale factors per row (sf_vec=16), and all 128 rows precede
-    # the next K64 block:
-    #   byte = kb * (rows * 4) + (row%32)*16 + (row//32)*4 + kg
-    # The old ``kb * 4`` selected the next M32 quadrant instead of the
-    # next K64 block, so kg0..3 were applied twice and kg4..7 were never
-    # consumed for a 128-wide K tile.
+
+    # TMA preserves the canonical M32x4xK4 storage in SMEM.  One K64 MMA
+    # block contributes four scale bytes for every row, so consecutive MMA
+    # K blocks are rows*4 bytes apart (512 bytes for the 128-row tile).
     def _sf_off(row):
         i32p = _ixop(e, "arith.remsi", row, _ix(e, 32))
         i4p = _ixop(e, "arith.divsi", row, _ix(e, 32))
-        return _ixop(e, "arith.addi",
-                     _ixop(e, "arith.addi",
-                           _ixop(e, "arith.muli", i32p, _ix(e, 16)),
-                           _ixop(e, "arith.muli", i4p, _ix(e, 4))),
-                     _ix(e, int(kb) * rows * 4))
+        return _ixop(
+            e,
+            "arith.addi",
+            _ixop(
+                e,
+                "arith.addi",
+                _ixop(e, "arith.muli", i32p, _ix(e, 16)),
+                _ixop(e, "arith.muli", i4p, _ix(e, 4)),
+            ),
+            _ix(e, int(kb) * rows * 4),
+        )
 
     if is_a:
         for i in range(2):                             # m-atoms (warp 32)
@@ -912,7 +918,8 @@ def copy_sf(tc, src, dst):
                       _ixop(e, "arith.muli", wm, _ix(e, 32)),
                       _ix(e, i * 16))
             r = _ixop(e, "arith.addi", r, l4)
-            r = _ixop(e, "arith.addi", r, _ixop(e, "arith.muli", l2, _ix(e, 8)))
+            r = _ixop(e, "arith.addi", r,
+                      _ixop(e, "arith.muli", l2, _ix(e, 8)))
             regs.append(_load_b32(e, arr, _ixop(e, "arith.addi",
                                                 soff, _sf_off(r))))
     else:
