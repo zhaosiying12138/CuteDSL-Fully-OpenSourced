@@ -275,7 +275,7 @@ def cute_size(x, mode=None) -> int:
             k = mode[0] if isinstance(mode, (list, tuple)) else mode
             return _prod(shape[k])
         return _prod(shape)
-    # A shape is represented by a tuple. Its CuTe size is the product of
+    # A shape is represented by a tuple.  Its CuTe size is the product of
     # extents, never Python's tuple length (the rank).
     if isinstance(x, tuple):
         return _prod(x)

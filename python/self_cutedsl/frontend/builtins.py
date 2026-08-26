@@ -157,10 +157,10 @@ def make_rmem_tensor(shape, dtype):
     n = 1
     for d in dims:
         n *= d
-    f = Fragment(n, BOOL if getattr(dtype, "name", "") in ("bool", "Boolean")
-                 else dtype)
-    f.dims = dims
-    return f
+    fragment = Fragment(
+        n, BOOL if getattr(dtype, "name", "") in ("bool", "Boolean") else dtype)
+    fragment.dims = dims
+    return fragment
 
 
 def elem_less(coord, shape):
@@ -691,7 +691,7 @@ def copy_r2s(tc, src, dst):
     am, an, ak = getattr(mma.op, "shape_mnk", (16, 8, 16))
     warps_m = int(_flatten(mma.atom_layout)[0]) if mma.atom_layout else 1
     warp_m, warp_n = mma.tile_mn
-    if ak >= 64:                        # SM120 block-scaled warp grid
+    if ak >= 64:
         warp_m, warp_n = 32, 64
         warps_m = 4
     mm, mn = warp_m // am, warp_n // an

@@ -134,7 +134,7 @@ class _FragSlice:
     """View retaining leading fragment modes while fixing trailing modes.
 
     CuTe's ``frag[(None, m, n)]`` keeps the value mode and selects one MMA
-    atom. Fragment slots are stored atom-major with the retained values
+    atom.  Fragment slots are stored atom-major with the retained values
     contiguous, so the selected atom starts at ``linear(m, n) * values``.
     """
 
