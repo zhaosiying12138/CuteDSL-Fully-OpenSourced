@@ -158,6 +158,50 @@ def make_tiled_copy_S(atom, tiled_copy_c):
     return TiledCopyR2S(atom, tiled_copy_c)
 
 
+def make_tiled_copy(atom, thr_layout, val_shape=None):
+    """cute.make_tiled_copy(atom, TV-layout, val-shape): SF smem->rmem copy
+    descriptor; lowered at the copy site from the SF trait geometry."""
+    return _SF_copy(atom, thr_layout, val_shape)
+
+
+class _SF_copy:
+    def __init__(self, atom, thr_layout, val_shape):
+        self.atom = atom
+        self.thr_layout = thr_layout
+        self.val_shape = val_shape
+        self.tidx = None
+
+    def get_slice(self, tidx):
+        self.tidx = tidx
+        return self
+
+    def partition_S(self, view):
+        return _SF_copy_view(self, view)
+
+    def retile(self, frag):
+        return frag
+
+
+class _SF_copy_view:
+    """tCsSF staged view + the copy descriptor; subscripts select the
+    k/stage window like the operand copy views."""
+
+    def __init__(self, tc, tile, stage=None, k=None):
+        self.tc = tc
+        self.tile = tile
+        self.stage = stage
+        self.k = k
+
+    def __getitem__(self, idx):
+        idx = idx if isinstance(idx, tuple) else (idx,)
+        slots = [c for c in idx if c is not None]
+        if len(slots) >= 2:
+            return _SF_copy_view(self.tc, self.tile, slots[-2], slots[-1])
+        if len(slots) == 1:
+            return _SF_copy_view(self.tc, self.tile, self.stage, slots[0])
+        return self
+
+
 def make_tiled_copy_A(atom, tiled_mma):
     from self_cutedsl.frontend.cute_objects import TiledCopyAB
 
@@ -192,6 +236,37 @@ def copy(atom, src, dst, pred=None, **kw):
         _tma_copy(atom, src, dst, **kw)
         return
     builtins.copy(atom, src, dst, pred)
+
+
+def make_tensor(iterator, layout):
+    """cute.make_tensor(iter, layout): rebind a host tensor's layout (the
+    iterator is the source meta/tensor view)."""
+    from self_cutedsl.frontend.meta import TensorMeta
+    from self_cutedsl.frontend.cute_objects import Tensor as _HT
+
+    src = getattr(iterator, "_torch", iterator)
+    if isinstance(iterator, TensorMeta):
+        nm = TensorMeta(iterator._torch, iterator.element_type,
+                        _shape_of(layout), _strides_of(layout, iterator))
+        return nm
+    v = _HT(getattr(iterator, "base", None), layout,
+            getattr(iterator, "element", None))
+    return v
+
+
+def _shape_of(layout):
+    from self_cutedsl.frontend.cute_objects import _flatten
+
+    return tuple(_flatten(layout.shape))
+
+
+def _strides_of(layout, like):
+    from self_cutedsl.frontend.cute_objects import _flatten
+
+    try:
+        return tuple(_flatten(layout.stride))
+    except Exception:
+        return None
 
 
 def filter_zeros(x):
@@ -255,16 +330,29 @@ def tile_to_shape(atom_layout, shape, order=None, **kw):
     a_shp = _flatten(atom_layout.shape)
     a_str = _flatten(atom_layout.stride)
     tgt = _flatten(shape)
-    reps = [-(-t // a) for t, a in zip(tgt, a_shp)] + [1] * (len(a_shp) - len(tgt))
-    keep_s, keep_d = [], []
-    for a, d, r in zip(a_shp, a_str, reps):
-        keep_s.append((a, r))
-        keep_d.append(d)
-    # ((atom),(rest)) hierarchical like zipped_divide
-    from self_cutedsl.frontend.cute_objects import make_layout as _ml
-    rest = tuple(reps)
-    return _ml((tuple(a_shp), rest)) if False else _L(
-        (tuple(a_shp), rest), (tuple(a_str), tuple(_prod_rest(rest))))
+    # trailing stage mode: (..., stages) -> ComposedLayoutStaged
+    stages = 1
+    if len(tgt) == len(a_shp) + 1:
+        stages = int(tgt[-1])
+        tgt = tgt[:-1]
+    reps = [-(-t // a) for t, a in zip(tgt, a_shp)] +         [1] * (len(a_shp) - len(tgt))
+    # atom tiled up to the per-stage tile: (tile, rest-not-used) — the
+    # per-stage layout is just the atom repeated over the tile extents
+    tile_s = tuple(tgt)
+    tile_d = []
+    acc = 1
+    from self_cutedsl.frontend.cute_objects import _prod as _p
+    for a, d in zip(reversed(a_shp), reversed(a_str)):
+        tile_d.append(acc if d == _p(a_shp[a_shp.index(a):]) or True else d)
+        acc = None if acc is None else acc
+    # simple row-major strides over the per-stage shape
+    strides, acc = [], 1
+    for d in reversed(tile_s):
+        strides.append(acc)
+        acc *= int(d)
+    strides.reverse()
+    from cutlass.utils import ComposedLayoutStaged
+    return ComposedLayoutStaged(_L(tile_s, tuple(strides)), stages)
 
 
 def _prod_rest(rest):
@@ -283,7 +371,10 @@ def group_modes(x, i, j):
 
     if isinstance(x, TensorMeta):
         return x.group_modes_meta(i, j)
-    return co.group_modes(x, i, j)
+    try:
+        return co.group_modes(x, i, j)
+    except (AttributeError, NotImplementedError):
+        return x      # opaque fragment descriptors keep their identity
 
 
 def _tma_copy(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):

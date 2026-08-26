@@ -43,6 +43,22 @@ class _SFragView:
         self.tidx = tidx
         self.which = which
 
+    @property
+    def shape(self):
+        # ((atom), rest...) descriptor shape for rank/group_modes
+        return (4, 2, 1)
+
+    @property
+    def rank(self):
+        return len(self.shape)
+
+    def __getitem__(self, idx):
+        idx = idx if isinstance(idx, tuple) else (idx,)
+        slots = [c for c in idx if c is not None]
+        v = _SFragView(self.smem_view, self.thr_mma, self.tidx, self.which)
+        v.k = slots[-1] if slots else 0
+        return v
+
 
 def sm90_get_smem_store_op(*args, **kw):
     return ("stmatrix", "f16")

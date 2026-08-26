@@ -6,7 +6,7 @@ form produced by the examples' create_scale_factor_tensor). These helpers
 tile that layout to the kernel's tile shapes; all host-meta, mirroring the
 dense_gemm layout helpers.
 """
-from cutlass.cute import Layout, make_layout
+from cutlass.cute import make_layout
 
 
 def _tile_shape_sf(tile_shape_mnk, sf_vec_size):
@@ -21,7 +21,7 @@ def tile_atom_to_shape_SF(tensor_or_shape, sf_vec_size,
     the input is the SF tensor (m, k/sf_vec, l meta) or its shape; returns
     ((atom_m, atom_k), (rest_m, rest_k, l)) host layout. The gmem SF data
     already lives in the M32x4xK4 blocked order, so the atom maps 1:1."""
-    from cutlass.cute import Layout as L
+    from self_cutedsl.frontend.cute_objects import Layout as L
 
     if hasattr(tensor_or_shape, "shape"):
         shape = tuple(int(d) for d in tensor_or_shape.shape)

@@ -22,6 +22,9 @@ def _flatten(x):
                 rec(i)
         else:
             from .layout import CuteLayout as _CL
+            if hasattr(v, "outer") and hasattr(v, "stages"):
+                rec(v.outer.shape)      # staged layout: per-stage shape
+                return
             if isinstance(v, _CL):
                 rec(v.shape)
             else:
@@ -43,6 +46,11 @@ class Layout:
     """Hierarchical (shape, stride) pair; strides may nest like shapes."""
 
     def __init__(self, shape, stride):
+        # staged-layout args degrade to their per-stage shape (kernel-side
+        # views only consume per-stage geometry; staging rides the window)
+        if hasattr(shape, "outer"):
+            shape = shape.outer.shape
+            stride = stride.outer.stride if hasattr(stride, "outer") else stride
         self.shape = _nest(shape)
         self.stride = _nest(stride)
 
@@ -183,7 +191,9 @@ class Tensor:
         flat_s = list(_flatten(self.layout.shape))
         flat_d = list(_flatten(self.layout.stride))
         if len(idx) > len(flat_s):
-            raise NotImplementedError(f"coord {idx} over rank {len(flat_s)}")
+            # trailing stage selectors (sX[None, None, 0]) drop out —
+            # staging rides the dedicated window machinery
+            idx = idx[:len(flat_s)]
         offs = dict(getattr(self, "coord_offs", {}))
         keep_s, keep_d = [], []
         for m, (s0, d0, c) in enumerate(zip(flat_s, flat_d,

@@ -36,6 +36,8 @@ class TypedValue:
         self.value, self.dtype = value, dtype
 
 
+Int8 = _DType("Int8", "i8", 8)
+Int16 = _DType("Int16", "i16", 16)
 Int32 = _DType("Int32", "i32", 32)
 Int64 = _DType("Int64", "i64", 64)
 UInt32 = _DType("UInt32", "i32", 32)

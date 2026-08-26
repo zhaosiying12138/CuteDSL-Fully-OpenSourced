@@ -179,9 +179,12 @@ def _pack_fp4(f32_tensor):
     codes = codes | (sign << 3)
     if codes.numel() % 2:
         codes = _t.cat([codes, _t.zeros(1, dtype=_t.uint8, device=codes.device)])
-    packed = (codes[0::2] | (codes[1::2] << 4)).reshape(f32_tensor.shape[:-1] +
-                                                        (f32_tensor.shape[-1] // 2,) if f32_tensor.dim() and f32_tensor.shape[-1] % 2 == 0 else (-1,))
-    return packed
+    packed = codes[0::2] | (codes[1::2] << 4)
+    # pack pairs along the k dimension: (m, k, l) -> (m, k/2, l)
+    shp = f32_tensor.shape
+    if len(shp) >= 2 and shp[1] % 2 == 0:
+        return packed.reshape(shp[0], shp[1] // 2, *shp[2:])
+    return packed.reshape(-1)
 
 
 class TensorInitType:

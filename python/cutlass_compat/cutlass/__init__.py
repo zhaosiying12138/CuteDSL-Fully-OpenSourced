@@ -13,6 +13,7 @@ from . import torch  # noqa: F401  (cutlass.torch)
 from . import pipeline  # noqa: F401  (cutlass.pipeline)
 from . import utils  # noqa: F401  (cutlass.utils)
 from .dtypes import (  # noqa: F401
+    Int8, Int16,
     Boolean,
     Constexpr,
     Int32,

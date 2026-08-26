@@ -26,9 +26,10 @@ class MmaMXF8Op:
 class LdMatrix8x8x16bOp:
     """ldmatrix.x4.sync.aligned.m8n8.x16.shared.b16 warp copy op marker."""
 
-    def __init__(self, trans=False, num=4):
-        self.trans = bool(trans)
-        self.num = num
+    def __init__(self, trans=False, num=4, transpose=None, num_matrices=None,
+                 **kw):
+        self.trans = bool(transpose if transpose is not None else trans)
+        self.num = int(num_matrices if num_matrices is not None else num)
 
 
 class StMatrix8x8x16bOp:

@@ -96,6 +96,11 @@ class TensorMeta:
         return self  # layout dynamism is a specialization hint; same meta here
 
     @property
+    def iterator(self):
+        """cute.make_tensor(t.iterator, layout) source handle."""
+        return self
+
+    @property
     def layout(self):
         """Host-meta Layout view of this tensor's shape/stride."""
         from .cute_objects import Layout as _L
