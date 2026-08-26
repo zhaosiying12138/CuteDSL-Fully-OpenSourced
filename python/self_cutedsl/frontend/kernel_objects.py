@@ -89,12 +89,15 @@ class Fragment:
         self.slots: dict[int, SSA] = {}
         self.vecs: list = []            # vector-granular values (perf path)
         self.name = name
+        self.dims = (count,)
 
     @property
     def shape(self):
-        return (self.count,)
+        return self.dims
 
     def __getitem__(self, i):
+        if isinstance(i, (tuple, list)):
+            return _FragSlice.from_modes(self, i)
         return self.slots[int(i)]
 
     def __setitem__(self, i, v):
@@ -125,6 +128,78 @@ class Fragment:
     @property
     def type(self) -> str:
         return f"cutlass.Tensor(rmem {self.dtype.name} x {self.count})"
+
+
+class _FragSlice:
+    """View retaining leading fragment modes while fixing trailing modes.
+
+    CuTe's ``frag[(None, m, n)]`` keeps the value mode and selects one MMA
+    atom. Fragment slots are stored atom-major with the retained values
+    contiguous, so the selected atom starts at ``linear(m, n) * values``.
+    """
+
+    def __init__(self, holder, base: int, shape):
+        self.holder = holder
+        self.base = int(base)
+        self.dims = tuple(int(d) for d in shape)
+        self.count = _shape_product(self.dims)
+
+    @classmethod
+    def from_modes(cls, holder, index, shape=None):
+        dims = tuple(int(d) for d in (shape or holder.shape))
+        index = tuple(index)
+        if len(index) != len(dims):
+            raise IndexError(
+                f"fragment rank mismatch: index {index} for shape {dims}")
+
+        first_fixed = next(
+            (pos for pos, coord in enumerate(index) if coord is not None),
+            len(index),
+        )
+        if any(coord is not None for coord in index[:first_fixed]) or \
+                any(coord is None for coord in index[first_fixed:]):
+            raise IndexError(
+                "fragment mode slices must retain leading modes and fix "
+                f"trailing modes, got {index}")
+
+        fixed_dims = dims[first_fixed:]
+        fixed_coords = [int(getattr(c, "value", c))
+                        for c in index[first_fixed:]]
+        linear = 0
+        for coord, dim in zip(fixed_coords, fixed_dims):
+            if coord < 0 or coord >= dim:
+                raise IndexError(
+                    f"fragment coordinate {coord} outside mode size {dim}")
+            linear = linear * dim + coord
+        retained_shape = dims[:first_fixed]
+        retained_count = _shape_product(retained_shape)
+        return cls(holder, linear * retained_count, retained_shape)
+
+    @property
+    def shape(self):
+        return self.dims
+
+    def __len__(self):
+        return self.count
+
+    def __getitem__(self, i):
+        i = int(getattr(i, "value", i))
+        if i < 0 or i >= self.count:
+            raise IndexError(i)
+        return self.holder.slots[self.base + i]
+
+    def __setitem__(self, i, value):
+        i = int(getattr(i, "value", i))
+        if i < 0 or i >= self.count:
+            raise IndexError(i)
+        self.holder.slots[self.base + i] = value
+
+
+def _shape_product(shape):
+    result = 1
+    for dim in shape:
+        result *= int(dim)
+    return result
 
 
 class FragmentView:

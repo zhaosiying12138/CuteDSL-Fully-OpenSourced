@@ -117,7 +117,7 @@ def size(x, mode=None):
     from self_cutedsl.frontend.kernel_objects import Fragment as _F
     from self_cutedsl.frontend.meta import cute_size
 
-    if isinstance(x, _F):
+    if isinstance(x, _F) and mode is None:
         return x.count
     return cute_size(x, mode)
 
