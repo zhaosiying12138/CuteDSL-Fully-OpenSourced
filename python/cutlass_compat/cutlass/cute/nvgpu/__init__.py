@@ -16,6 +16,6 @@ class StMatrixOp:
 def __getattr__(name):
     from importlib import import_module
 
-    if name in ("warp", "cpasync"):
+    if name in ("warp", "cpasync", "warpgroup"):
         return import_module(f"cutlass.cute.nvgpu.{name}")
     raise AttributeError(name)

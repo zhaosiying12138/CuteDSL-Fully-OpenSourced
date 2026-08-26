@@ -194,21 +194,95 @@ def copy(atom, src, dst, pred=None, **kw):
     builtins.copy(atom, src, dst, pred)
 
 
+def filter_zeros(x):
+    """Drop zero-stride modes (tma partition views in this model are
+    already minimal descriptors — identity for them; layouts keep their
+    nonzero-stride modes)."""
+    from self_cutedsl.frontend.cute_objects import Layout as _L, Tensor as _T
+
+    if hasattr(x, "outer") and not hasattr(x, "shape"):   # staged layout
+        from cutlass.utils import ComposedLayoutStaged as _S
+
+        return _S(filter_zeros(x.outer), x.stages, x.inner)
+    if hasattr(x, "shape") and not isinstance(x, (_L, _T)) and \
+            hasattr(x, "stride"):
+        # host-meta layout-ish object (CuteLayout etc.)
+        return x
+    if isinstance(x, _L):
+        shp = x.shape if isinstance(x.shape, tuple) else (x.shape,)
+        strd = x.stride if isinstance(x.stride, tuple) else (x.stride,)
+        keep = [(a, b) for a, b in zip(shp, strd)
+                if not (isinstance(b, int) and b == 0)]
+        return _L(tuple(a for a, _ in keep), tuple(b for _, b in keep))
+    return x
+
+
+def rank(x):
+    """Mode count of a tensor/layout's top level."""
+    from self_cutedsl.frontend.cute_objects import Layout as _L, Tensor as _T
+    from self_cutedsl.frontend.meta import TensorMeta as _M
+
+    if isinstance(x, _T):
+        shp = x.layout.shape
+    elif isinstance(x, _L):
+        shp = x.shape
+    elif isinstance(x, _M):
+        shp = x.shape
+    else:
+        shp = x
+    return len(shp) if isinstance(shp, tuple) else 1
+
+
+def append(tup, *vals):
+    if not isinstance(tup, tuple):
+        tup = (tup,)
+    return tup + tuple(vals)
+
+
+def recast_tensor(tensor, dtype=None, **kw):
+    """View a tensor under a different element type (same storage)."""
+    t = tensor
+    if dtype is not None:
+        t.element = dtype
+        t.recast_dtype = dtype
+    return t
+
+
+def tile_to_shape(atom_layout, shape, order=None, **kw):
+    """Tile a layout atom up to shape (row-major rest by default)."""
+    from self_cutedsl.frontend.cute_objects import Layout as _L, _flatten, _prod
+
+    a_shp = _flatten(atom_layout.shape)
+    a_str = _flatten(atom_layout.stride)
+    tgt = _flatten(shape)
+    reps = [-(-t // a) for t, a in zip(tgt, a_shp)] + [1] * (len(a_shp) - len(tgt))
+    keep_s, keep_d = [], []
+    for a, d, r in zip(a_shp, a_str, reps):
+        keep_s.append((a, r))
+        keep_d.append(d)
+    # ((atom),(rest)) hierarchical like zipped_divide
+    from self_cutedsl.frontend.cute_objects import make_layout as _ml
+    rest = tuple(reps)
+    return _ml((tuple(a_shp), rest)) if False else _L(
+        (tuple(a_shp), rest), (tuple(a_str), tuple(_prod_rest(rest))))
+
+
+def _prod_rest(rest):
+    from self_cutedsl.frontend.cute_objects import _flatten
+
+    out, acc = [], 1
+    for d in reversed(rest):
+        out.append(acc)
+        acc *= d
+    return list(reversed(out))
+
+
 def group_modes(x, i, j):
     from self_cutedsl.frontend import cute_objects as co
     from self_cutedsl.frontend.meta import TensorMeta
 
     if isinstance(x, TensorMeta):
-        # host data tensor: regroup shape/stride modes i..j into one
-        shp = list(x.shape)
-        strd = list(x.stride)
-        g = 1
-        for d in shp[i:j + 1]:
-            g *= int(d)
-        new_s = tuple(shp[:i]) + (g,) + tuple(shp[j + 1:])
-        new_d = tuple(strd[:i]) + (strd[i],) + tuple(strd[j + 1:])
-        nm = TensorMeta(x._torch, x.element_type, new_s, new_d)
-        return nm
+        return x.group_modes_meta(i, j)
     return co.group_modes(x, i, j)
 
 

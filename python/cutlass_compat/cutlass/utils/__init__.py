@@ -24,6 +24,12 @@ class LayoutEnum:
             return LayoutEnum(LayoutEnum.ROW_MAJOR)
         return LayoutEnum(LayoutEnum.COLUMN_MAJOR)
 
+    def is_k_major_a(self):
+        return self.value == LayoutEnum.ROW_MAJOR
+
+    def is_k_major_b(self):
+        return self.value == LayoutEnum.ROW_MAJOR
+
     def is_m_major_a(self):
         # A is (m,k): m-major when the m stride is 1
         return self.value == LayoutEnum.COLUMN_MAJOR
@@ -31,6 +37,9 @@ class LayoutEnum:
     def is_n_major_b(self):
         # B is (n,k): n-major when the n stride is 1
         return self.value == LayoutEnum.COLUMN_MAJOR
+
+    def is_n_major_c(self):
+        return self.value == LayoutEnum.ROW_MAJOR
 
     def is_m_major_c(self):
         # C is (m,n): m-major when the m stride is 1
@@ -226,6 +235,14 @@ class ComposedLayoutStaged:
         self.outer = outer
         self.stages = int(stages)
         self.inner = swizzle
+
+    @property
+    def shape(self):
+        return self.outer.shape
+
+    @property
+    def stride(self):
+        return self.outer.stride
 
     def __repr__(self):
         return f"ComposedLayoutStaged({self.outer}, stages={self.stages})"

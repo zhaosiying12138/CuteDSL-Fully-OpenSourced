@@ -15,31 +15,28 @@ def _tile_shape_sf(tile_shape_mnk, sf_vec_size):
     return (tm, tk // sf_vec_size)
 
 
-def tile_atom_to_shape_SF(sf_atom_layout, shape_mnkl, sf_vec_size,
-                          tile_shape_mnk):
-    """Tile the full-SF-tensor layout by the per-tile SF atom.
-
-    sf_atom_layout: the per-tile SF layout (m, k_sf) from
-    sm120_make_smem_layout_{sfa,sfb} minus staging.
-    Returns a staged-style host layout: ((atom), (rest_m, rest_k, l))."""
+def tile_atom_to_shape_SF(tensor_or_shape, sf_vec_size,
+                          tile_shape_mnk=(128, 128, 128)):
+    """SF tensor layout tiled by the canonical 32x4 x K4 atom:
+    the input is the SF tensor (m, k/sf_vec, l meta) or its shape; returns
+    ((atom_m, atom_k), (rest_m, rest_k, l)) host layout. The gmem SF data
+    already lives in the M32x4xK4 blocked order, so the atom maps 1:1."""
     from cutlass.cute import Layout as L
 
-    m, n, k, l = (int(x) for x in shape_mnkl)
-    atom_m, atom_k = _tile_shape_sf(tile_shape_mnk, sf_vec_size)
-    rest_m = -(-m // atom_m)
-    rest_k = -(-k // (atom_k * sf_vec_size))
-    atom_shape = tuple(int(d) for d in
-                       (sf_atom_layout.shape
-                        if isinstance(sf_atom_layout, Layout) else atom_m,))
-    # the atom from the smem layout is (m, k_sf) nested or flat
-    flat = []
-    for d in sf_atom_layout.shape:
-        if isinstance(d, tuple):
-            flat.extend(d)
-        else:
-            flat.append(int(d))
-    atom_lay = L(tuple(flat), tuple(range(len(flat) - 1, -1, -1)))
-    return L(((atom_lay.shape), (rest_m, rest_k, l)),
+    if hasattr(tensor_or_shape, "shape"):
+        shape = tuple(int(d) for d in tensor_or_shape.shape)
+    else:
+        shape = tuple(int(d) for d in tensor_or_shape)
+    # the SF tensor arrives as (m, k_sf, l) logical elements
+    if len(shape) == 3:
+        m, k_sf, l = shape
+    elif len(shape) == 2:
+        m, k_sf, l = shape[0], shape[1], 1
+    else:
+        raise NotImplementedError(f"SF shape {shape}")
+    rest_m = -(-m // 128)
+    rest_k = -(-k_sf // 4)
+    return L(((32, 4, 4), (rest_m, rest_k, l)),
              ((0, 0, 0), (0, 0, 0)))
 
 

@@ -60,6 +60,37 @@ class TensorMeta:
         self.shape = tuple(int(s) for s in shape)
         self.stride = tuple(int(s) for s in stride) if stride else _row_major(self.shape)
         self._layout_cache = None
+        # mode decomposition for grouped views: [(size, stride), ...] or,
+        # for a merged mode, (size, [(sub_size, sub_stride), ...])
+        self._modes = [(int(a), int(b)) for a, b in zip(self.shape, self.stride)]
+
+    def group_modes_meta(self, i, j):
+        """Merge modes i..j into one (index math keeps the sub-strides)."""
+        subs = self._modes[i:j + 1]
+        g = 1
+        for sz, _ in subs:
+            g *= sz
+        modes = self._modes[:i] + [(g, subs)] + self._modes[j + 1:]
+        shp = tuple(m[0] for m in modes)
+        strd = tuple(m[1] if isinstance(m[1], int) else m[1][0][1]
+                     for m in modes)
+        nm = TensorMeta(self._torch, self.element_type, shp, strd)
+        nm._modes = modes
+        return nm
+
+    def _flat_index(self, coord):
+        c = coord if isinstance(coord, tuple) else (coord,)
+        idx = 0
+        for ci, mode in zip(c, self._modes):
+            if isinstance(mode[1], int):
+                idx += int(ci) * mode[1]
+            else:
+                # merged group: decompose the digit over the sub-modes
+                rem = int(ci)
+                for sz, st in reversed(mode[1]):
+                    idx += (rem % sz) * st
+                    rem //= sz
+        return idx
 
     def mark_layout_dynamic(self) -> "TensorMeta":
         return self  # layout dynamism is a specialization hint; same meta here
@@ -72,13 +103,6 @@ class TensorMeta:
         if self._layout_cache is None:
             self._layout_cache = _L(self.shape, self.stride)
         return self._layout_cache
-
-    def _flat_index(self, coord):
-        idx = 0
-        c = coord if isinstance(coord, tuple) else (coord,)
-        for ci, di in zip(c, self.stride):
-            idx += int(ci) * int(di)
-        return idx
 
     def __getitem__(self, coord):
         return self._torch.reshape(-1)[self._flat_index(coord)]
