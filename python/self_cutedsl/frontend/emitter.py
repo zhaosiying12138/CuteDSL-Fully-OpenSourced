@@ -229,44 +229,41 @@ class KernelEmitter:
         return outs
 
     def mma_mxf4nvf4(self, a, b, sfa, sfb, c):
-        """mma.sync.aligned.m16n8k64.row.col.kind::mxf4nvf4.f32.f4.f4.f32
-        via inline PTX (nvvm op unavailable); A/B/SF are packed i32 regs,
-        while the four accumulator inputs are f32 registers."""
-        packed = a + b + sfa + sfb
-        if any(x.type != "i32" for x in packed):
-            raise TypeError("mxf4nvf4 packed A/B/SF operands must be i32")
-        if any(x.type != "f32" for x in c):
-            raise TypeError("mxf4nvf4 accumulator operands must be f32")
-        # NVVM's InlinePtxOp treats llvm.constant operands as immediate
-        # constraint `n`. A read-write MMA accumulator must be a register,
-        # including on the first (zero-initialized) instruction. Move the raw
-        # bits through a write-only PTX output so the following bitcast has a
-        # genuine register-producing definition even when the input is zero.
-        c_regs = []
+        """m16n8k64 kind::mxf4nvf4 (SM120 NVFP4). A: 4xi32, B: 2xi32,
+        SFA/SFB: 1xi32 each; C: 4xf32; D via explicit asm outputs
+        ($w form — the rw-tied form gets DCEd by the conversion)."""
+        for x in a + b + sfa + sfb:
+            if x.type != "i32":
+                raise TypeError("mxf4nvf4 packed operands must be i32")
         for x in c:
-            bits = self.ssa("i32", f"llvm.bitcast {x.name} : f32 to i32")
-            reg_bits = self.ssa(
-                "i32",
-                f'nvvm.inline_ptx "mov.b32 {{$w0}}, {{$r0}};" '
-                f'ro ({bits.name} : i32) -> i32',
-            )
-            c_regs.append(self.ssa(
-                "f32", f"llvm.bitcast {reg_bits.name} : i32 to f32"))
-        ro_ops = ", ".join(x.name for x in packed)
-        ro_types = ", ".join(x.type for x in packed)
-        rw_ops = ", ".join(x.name for x in c_regs)
-        rw_types = ", ".join(x.type for x in c_regs)
-        self.raw(
-            'nvvm.inline_ptx "mma.sync.aligned.m16n8k64.row.col'
-            '.kind::mxf4nvf4.f32.f4.f4.f32 '
-            '{$0, $1, $2, $3}, '
-            '{$4, $5, $6, $7}, {$8, $9}, '
-            '{$10, $11}, {$12, $13}, '
-            '{$0, $1, $2, $3};" '
-            f'ro ({ro_ops} : {ro_types}) rw ({rw_ops} : {rw_types})')
-        # Read-write operands are updated in place by NVVM InlinePtxOp; its
-        # conversion rewrites dominated uses to the tied inline-asm outputs.
-        return c_regs
+            if x.type != "f32":
+                raise TypeError("mxf4nvf4 accumulators must be f32")
+        c_i32 = [self.ssa("i32", f"llvm.bitcast {x.name} : f32 to i32")
+                 for x in c]
+        def _zreg():
+            # force a real 16-bit register (immediates are rejected by
+            # ptxas inside mma brace vectors)
+            return self.ssa(
+                "i16",
+                'nvvm.inline_ptx "mov.b16 {$w0}, 0;" -> i16')
+        z16 = [_zreg() for _ in range(4)]
+        ro = a + b + sfa + [z16[0], z16[1]] + sfb + [z16[2], z16[3]] + c_i32
+        ro_ops = ", ".join(x.name for x in ro)
+        ro_types = ", ".join(x.type for x in ro)
+        sty = "!llvm.struct<(f32, f32, f32, f32)>"
+        line = ('nvvm.inline_ptx "' +
+                'mma.sync.aligned.kind::mxf4nvf4' +
+                '.block_scale.scale_vec::4X.m16n8k64.row.col.f32' +
+                '.e2m1.e2m1.f32.ue4m3 ' +
+                '{$0, $1, $2, $3}, ' +
+                '{$4, $5, $6, $7}, {$8, $9}, ' +
+                '{$16, $17, $18, $19}, ' +
+                '{$10}, {$11, $12}, {$13}, {$14, $15};" ' +
+                f'ro ({ro_ops} : {ro_types}) -> {sty}')
+        r = self.ssa(sty, line)
+        return [self.ssa("f32",
+                f"llvm.extractvalue {r.name}[{i}] : " + sty)
+                for i in range(4)]
 
     def extract_i32(self, struct: SSA, idx: int) -> SSA:
         n = _struct_len(struct.type)

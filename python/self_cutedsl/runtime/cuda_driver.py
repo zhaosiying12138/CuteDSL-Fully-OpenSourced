@@ -76,7 +76,9 @@ class DriverJit:
         _check(cu.cuCtxSetCurrent(self._ctx), "cuCtxSetCurrent")
         import os as _os
         if _os.environ.get("DG_DUMP_PTX"):
-            with open("/tmp/dg_fail.ptx", "w") as f:
+            _n = getattr(DriverJit, "_dump_n", 0) + 1
+            DriverJit._dump_n = _n
+            with open(f"/tmp/dg_mod_{_n}.ptx", "w") as f:
                 f.write(ptx if isinstance(ptx, str) else ptx.decode())
         err, self._mod = cu.cuModuleLoadDataEx(ptx, 0, [], [])
         _check(err, "cuModuleLoadDataEx")

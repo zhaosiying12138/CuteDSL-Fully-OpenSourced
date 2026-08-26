@@ -120,6 +120,18 @@ class MemRangeSpec:
             ptr = e.ssa("!llvm.ptr<3>",
                         f"llvm.mlir.addressof @{name} : !llvm.ptr<3>")
             return _SmemRawPtr(ptr, self.count)
+        # sub-byte/fp8 dtypes allocate a BYTE array (count * width/8 bytes)
+        width = getattr(self.dtype, "width", 32) or 32
+        if width <= 8:
+            e = _b._emitter()
+            nbytes = self.count * max(1, width) // 8
+            line = (f"    llvm.mlir.global internal @{name}() "
+                    f"{{addr_space = 3 : i32, alignment = 128 : i64}} "
+                    f": !llvm.array<{nbytes} x i8>")
+            e.smem_globals.append(line)
+            ptr = e.ssa("!llvm.ptr<3>",
+                        f"llvm.mlir.addressof @{name} : !llvm.ptr<3>")
+            return _b.SmemArray(ptr, nbytes, self.dtype)
         elem = {"float16": "f16", "float32": "f32",
                 "bfloat16": "bf16"}.get(name_lower, "f32")
         arr = _b.make_smem_tile(name, self.count, self.dtype)

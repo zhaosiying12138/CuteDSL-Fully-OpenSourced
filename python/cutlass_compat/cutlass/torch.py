@@ -28,7 +28,7 @@ class Tensor:
         return f"<self_cutedsl.Tensor {self.dtype_name}{self.shape}>"
 
 
-def from_dlpack(torch_tensor):
+def from_dlpack(torch_tensor, assumed_align=None, **kw):
     """torch tensor -> TensorMeta (device pointer + shape/stride/element)."""
     from self_cutedsl.frontend.meta import TensorMeta, make_tensor_meta
 
@@ -71,8 +71,7 @@ def matrix(l, m_or_n, k_or_m, major, dtype, gen=None):
     """
     import torch as _t
 
-    _torch_to_dsl = {v: k for k, v in _TORCH_OF.items()}
-    tdtype = _torch_to_dsl.get(getattr(dtype, "name", dtype), _t.float16)
+    tdtype = _TORCH_OF.get(getattr(dtype, "name", str(dtype)), _t.float16)
     l = int(l)
     # 'k'-major A/B (m,k) and 'n'-major C (m,n) are both row-major in the
     # (first, second) argument order; only 'm'-major transposes

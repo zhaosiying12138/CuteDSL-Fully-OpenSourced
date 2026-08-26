@@ -434,6 +434,15 @@ def gemm(tiled_mma, acc, a_frag, b_frag, *rest):
     from self_cutedsl.frontend import builtins
     from self_cutedsl.frontend.cute_objects import FragK
 
+    import os as _os
+    if _os.environ.get("DG_GEMM_DEBUG"):
+        import sys as _s
+        print(f"DBG gemm: a={type(a_frag).__name__} "
+              f"list={isinstance(a_frag, (list, tuple))} "
+              f"len={len(a_frag) if isinstance(a_frag, (list, tuple)) else '-'} "
+              f"e1={type(a_frag[1]).__name__ if isinstance(a_frag, (list, tuple)) and len(a_frag) > 1 else '-'} "
+              f"sv={hasattr(a_frag[1], 'smem_view') if isinstance(a_frag, (list, tuple)) and len(a_frag) > 1 else '-'}",
+              file=_s.stderr)
     if isinstance(a_frag, (list, tuple)) and len(a_frag) == 2 \
             and hasattr(a_frag[1], "smem_view"):   # block-scaled [data, SF]
         builtins.gemm_bs(tiled_mma, acc, a_frag, b_frag)
@@ -681,6 +690,13 @@ def size_in_bytes(dtype, layout):
     from self_cutedsl.frontend.layout import CuteLayout, _flatten, _prod
     from self_cutedsl.frontend.cute_objects import Layout as HostLayout
 
+    import os as _os
+    if _os.environ.get("DG_SIB_DEBUG"):
+        import sys as _s
+        print(f"DBG sib: dtype={getattr(dtype, 'name', dtype)} "
+              f"lay={type(layout).__name__} "
+              f"shape={getattr(getattr(layout, 'outer', layout), 'shape', '?')}",
+              file=_s.stderr)
     if isinstance(layout, (CuteLayout, HostLayout)):
         n = _prod(_flatten(layout.shape))
     elif hasattr(layout, "outer"):          # ComposedLayoutStaged per-stage
@@ -695,7 +711,7 @@ def size_in_bytes(dtype, layout):
         n = _walk(layout.outer.shape)
     else:
         n = 1
-    return n * int(getattr(dtype, "width", 16) // 8)
+    return n * int(getattr(dtype, "width", 16)) // 8
 
 
 def make_layout_image_mask(cta_layout, coord, mode):

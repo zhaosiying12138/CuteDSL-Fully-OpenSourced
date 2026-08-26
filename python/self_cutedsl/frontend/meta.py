@@ -92,8 +92,8 @@ class TensorMeta:
                     rem //= sz
         return idx
 
-    def mark_layout_dynamic(self) -> "TensorMeta":
-        return self  # layout dynamism is a specialization hint; same meta here
+    def mark_layout_dynamic(self, leading_dim=None, **kw) -> "TensorMeta":
+        return self  # dynamism hints; same meta (leading_dim advisory)
 
     @property
     def iterator(self):

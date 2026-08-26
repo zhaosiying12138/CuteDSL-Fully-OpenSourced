@@ -19,7 +19,9 @@ def tma_issue(smem_window, tma_desc_ssa, bar_ssa, coords):
     off = getattr(smem_window, "stage_offset", None)
     if off is not None:
         elem = getattr(smem_window, "elem", None)
-        ety = "f16" if getattr(elem, "name", "").lower() in ("f16", "float16") else "f32"
+        w = getattr(elem, "width", 32) or 32
+        nm = getattr(elem, "name", "").lower()
+        ety = "f16" if nm in ("f16", "float16") else ("i8" if w <= 8 else "f32")
         smem_ptr = e.gep_smem(smem_ptr, off, ety)
     e.tma_load(smem_ptr, tma_desc_ssa, bar_ssa, list(coords))
 

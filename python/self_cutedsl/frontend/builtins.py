@@ -383,7 +383,11 @@ def ldmatrix(smem, row_ssa, col_elems: int = 0, num: int = 4, trans: bool = Fals
 def make_tiled_mma(atom, atom_layout=None):
     from .cute_objects import TiledMma, MmaF16BF16OpAtom
 
-    return TiledMma(MmaF16BF16OpAtom(), atom_layout)
+    # keep the real op (block-scaled ops carry shape_mnk like (16,8,64)
+    # that the copy/gemm paths branch on); f16 call sites pass the plain
+    # MmaF16BF16Op marker which has no shape — wrap it for compatibility
+    op = atom if hasattr(atom, "shape_mnk") else MmaF16BF16OpAtom()
+    return TiledMma(op, atom_layout)
 
 
 def gemm(tiled_mma, acc, a_frag, b_frag):
@@ -485,6 +489,7 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
     from .meta import TensorMeta
     from ..runtime.tensor_map import TensorMapRecipe, CUtensorMapView
 
+    _gw = getattr(getattr(gmem_tensor, "element_type", None), "width", 32) or 32
     if hasattr(smem_layout_or_tensor, "outer"):        # ComposedLayoutStaged
         smem_lay = smem_layout_or_tensor.outer
     elif hasattr(smem_layout_or_tensor, "layout"):
@@ -492,19 +497,49 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
     else:
         smem_lay = smem_layout_or_tensor
     box_slow = _flatten(smem_lay.shape)[:2]
+    if _gw < 8:
+        box_slow = (box_slow[0], box_slow[1] // (8 // _gw))  # bytes
     box = tuple(reversed(box_slow))
 
     meta = gmem_tensor
+    shp = tuple(int(d) for d in getattr(gmem_tensor, "shape", ()))
+    _w = getattr(getattr(gmem_tensor, "element_type", None), "width", 32) or 32
+    is_sf = (_w == 8 and len(shp) == 6 and shp[0] == 32 and shp[1] == 4
+             and shp[2] == 4)   # flat ((32,4,4),(rm,rk,l))
     if isinstance(gmem_tensor, CUtensorMapView):
         meta = None
         recipe = gmem_tensor.recipe
+    elif is_sf:
+        # block-scaled SF in the canonical (32,4)x(4) blocked layout:
+        # storage = contiguous 512B blocks; view shape (32,4,rm,4,rk,l)
+        # with strides (16,4,rk*512,1,512,l*...). Per CTA m-tile/k-tile
+        # the 1024 SF bytes (2 consecutive blocks) are contiguous ->
+        # uint8 2D recipe (rm, rk*512), box (1, 1024)
+        import torch as _t
+        strd = tuple(int(x) for x in getattr(gmem_tensor, "stride", ()))
+        rm, rk, l = shp[3], shp[4], shp[5]
+        rm_str = (strd[3] if strd and strd[3] else None) or rk * 512
+        recipe = TensorMapRecipe(dtype=_t.uint8,
+                                 shape=(rm, rk, 2, 256),
+                                 strides_elems=(rm_str, 512, 256, 1),
+                                 box=(256, 2, 2, 1))
+        box = (256, 2, 2, 1)
     elif isinstance(gmem_tensor, TensorMeta):
         import torch as _t
-        dt = {"f16": _t.float16, "f32": _t.float32,
-              "bf16": _t.bfloat16}.get(gmem_tensor.element_type.name, _t.float32)
+        _n = getattr(gmem_tensor.element_type, "name", "")
+        dt = {"f16": _t.float16, "f32": _t.float32, "bf16": _t.bfloat16,
+              "i8": _t.uint8, "Float4E2M1FN": _t.uint8,
+              "Float8E4M3FN": _t.uint8}.get(_n, _t.float32)
         m, n = gmem_tensor.shape[0], gmem_tensor.shape[1]
-        recipe = TensorMapRecipe(dtype=dt, shape=(m, n),
-                                 strides_elems=(n, 1), box=box)
+        if _w <= 8:
+            # fp4/fp8 operand storage: (m, k_bytes) row-major uint8
+            row = int(gmem_tensor.stride[0]) if getattr(
+                gmem_tensor, "stride", None) else n
+            recipe = TensorMapRecipe(dtype=_t.uint8, shape=(m, row),
+                                     strides_elems=(row, 1), box=box)
+        else:
+            recipe = TensorMapRecipe(dtype=dt, shape=(m, n),
+                                     strides_elems=(n, 1), box=box)
     else:
         recipe = None
     atom = TmaAtom(op, None, cta_layout or make_layout((1, 1)), smem_lay, box)
@@ -518,6 +553,14 @@ def _materialize_tma_view(recipe, gmem_tensor):
     (single-shot path; repeated launches reuse the same device copy)."""
     if recipe is None:
         return None
+    import os as _os
+    if _os.environ.get("DG_TMA_DEBUG"):
+        import sys as _s
+        print(f"DBG tma recipe: dtype={recipe.dtype} shape={recipe.shape} "
+              f"strides={recipe.strides_elems} box={recipe.box} "
+              f"meta_shape={tuple(getattr(gmem_tensor, 'shape', ()))} "
+              f"w={getattr(getattr(gmem_tensor, 'element_type', None), 'width', '?')}",
+              file=_s.stderr)
     from ..runtime.tensor_map import CUtensorMapView
 
     torch_t = getattr(gmem_tensor, "_torch", None)
@@ -586,6 +629,10 @@ def copy_tiled(tc, src, dst):
     elems_per_stage = flat_shp[0] * flat_shp[1]
     tidx = _ix(e, tc.tidx)
 
+    _ak = getattr(getattr(tc.mma, "op", None), "shape_mnk", (16, 8, 16))[2]
+    if _ak >= 64:
+        # fp4 arrays are byte-typed: halve the element count for windows
+        elems_per_stage = elems_per_stage // 2
     win = smem_stage(arr, src.stage, elems_per_stage)
     soff = win.stage_offset
 
@@ -606,7 +653,34 @@ def copy_tiled(tc, src, dst):
     wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
     k0 = _ixop(e, "arith.muli", _ix(e, src.k), _ix(e, 16))
 
-    if tc.which == "A":
+    if tc.which == "A" and ak >= 64:
+        # fp4 packed smem (m, k/2 bytes): per trait ALayout, reg j of atom i:
+        # row = base + lane//4 + 8*(j%2); k-octet = 8*(lane%4) + 32*(j//2)
+        # -> aligned b32 loads (8 nibbles = 4 bytes each)
+        regs = []
+        l4 = _ixop(e, "arith.divsi", lane, _ix(e, 4))
+        l4m = _ixop(e, "arith.remsi", lane, _ix(e, 4))
+        byte_row = _ix(e, flat_str[0] // 2)   # bytes per m-row (fp4)
+        kb4 = _ixop(e, "arith.muli", _ix(e, src.k), _ix(e, 16))
+        for i in range(mm):
+            r0 = _ixop(e, "arith.addi",
+                       _ixop(e, "arith.muli", wm, _ix(e, warp_m)),
+                       _ix(e, i * 16 + 0))
+            r0 = _ixop(e, "arith.addi", r0, l4)
+            koct = _ixop(e, "arith.addi",
+                         _ixop(e, "arith.muli", l4m, _ix(e, 4)), kb4)
+            for j in range(4):
+                rj = _ixop(e, "arith.addi", r0,
+                           _ix(e, 8 * (j % 2)))
+                kj = _ixop(e, "arith.addi", koct, _ix(e, 16 * (j // 2)))
+                off = _ixop(e, "arith.addi", soff,
+                            _ixop(e, "arith.addi",
+                                  _ixop(e, "arith.muli", rj, byte_row), kj))
+                p = e.gep_smem(arr.ptr, off, "i8")
+                regs.append(e.ssa("i32",
+                                  f"llvm.load {p.name} : !llvm.ptr<3> -> i32"))
+        dst.frag.slots[dst.k] = regs
+    elif tc.which == "A":
         # smem layout (m,k):(k,1): ldmatrix.x4 rows=m (16B = 8 halves of k)
         regs = []
         for i in range(mm):
@@ -623,6 +697,30 @@ def copy_tiled(tc, src, dst):
                               _ixop(e, "arith.addi", k0, half8)))
             f = e.ldmatrix(e.gep_smem(arr.ptr, off), 4, trans=False)
             regs.extend(e.extract_i32(f, j) for j in range(4))
+        dst.frag.slots[dst.k] = regs
+    elif ak >= 64:
+        # fp4 packed B (n, k/2 bytes): reg j of atom na: col = base +
+        # lane//4; k-octet = 8*(lane%4) + 32*j -> aligned b32 loads
+        regs = []
+        l4 = _ixop(e, "arith.divsi", lane, _ix(e, 4))
+        l4m = _ixop(e, "arith.remsi", lane, _ix(e, 4))
+        byte_row = _ix(e, flat_str[0] // 2)
+        kb4 = _ixop(e, "arith.muli", _ix(e, src.k), _ix(e, 16))
+        for na in range(mn):
+            c0 = _ixop(e, "arith.addi",
+                       _ixop(e, "arith.muli", wn, _ix(e, warp_n)),
+                       _ix(e, na * 8))
+            c0 = _ixop(e, "arith.addi", c0, l4)
+            koct = _ixop(e, "arith.addi",
+                         _ixop(e, "arith.muli", l4m, _ix(e, 4)), kb4)
+            for j in range(2):
+                kj = _ixop(e, "arith.addi", koct, _ix(e, 16 * j))
+                off = _ixop(e, "arith.addi", soff,
+                            _ixop(e, "arith.addi",
+                                  _ixop(e, "arith.muli", c0, byte_row), kj))
+                p = e.gep_smem(arr.ptr, off, "i8")
+                regs.append(e.ssa("i32",
+                                  f"llvm.load {p.name} : !llvm.ptr<3> -> i32"))
         dst.frag.slots[dst.k] = regs
     else:
         # smem layout (n,k):(k,1): ldmatrix.x2 rows=n; mat1 = +8 k elements
@@ -757,62 +855,68 @@ def frag_to(view, dtype):
 
 
 def copy_sf(tc, src, dst):
-    """SF smem->rmem: each thread loads its e4m3 scale bytes for the
-    current k-block. First-guess slot mapping (calibrate vs PTX):
-    SFA reg j of m-atom i covers rows {base+i*16+(lane//4), +8} at
-    k-groups {kb*4 + 2j, 2j+1} packed 2 bytes/reg (nvfp4 sf_vec 16)."""
-    from .cute_objects import Tensor as HT, _flatten
+    """SF smem->rmem per the SM120 mxf4nvf4 trait layouts (cute BSD):
+    one b32 per atom; SFA bytes = SF[row = atom_base + lane//4 +
+    8*(lane%2)][kg 0..3]; SFB bytes = SF[col = atom_base + lane//4]
+    [kg 0..3] (k-group base = kb*4, nvfp4 sf_vec 16)."""
+    from .cute_objects import _flatten
 
     e = _emitter()
-    view = src if hasattr(src, "tile") else dst   # src side carries the tile
+    view = src if hasattr(src, "tile") else dst
     tile = view.tile
-    arr = tile.base                     # SmemArray (e4m3 bytes)
+    arr = tile.base
     lay = tile.layout
-    rows = int(_flatten(lay.shape)[0])  # tile_m (SFA) / tile_n (SFB)
-    kgs = int(_flatten(lay.shape)[1])   # tile_k / sf_vec
+    rows = int(_flatten(lay.shape)[0])
+    kgs = int(_flatten(lay.shape)[1])
     kb = int(getattr(view, "k", 0) or 0)
-    stage = getattr(view, "stage", 0)
 
     tidx = _ix(e, tc.tidx)
     lane = _ixop(e, "arith.remsi", tidx, _ix(e, 32))
     wid = _ixop(e, "arith.divsi", tidx, _ix(e, 32))
-    warps_m = 4
-    warp_m, warp_n = 32, 64
-    wm = _ixop(e, "arith.remsi", wid, _ix(e, warps_m))
-    wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
+    wm = _ixop(e, "arith.remsi", wid, _ix(e, 4))
+    wn = _ixop(e, "arith.divsi", wid, _ix(e, 4))
 
-    # side from sequence parity (SFA copied before SFB at each k-block)
     global _SF_SEQ, _SF_KB
     if int(kb) != _SF_KB:
         _SF_KB = int(kb)
         _SF_SEQ = 0
     is_a = _SF_SEQ % 2 == 0
     which = "A" if is_a else "B"
-    # A side: regs per m-atom (rows), B side: regs per n-atom (cols)
-    m_atoms = (warp_m // 16) if is_a else (warp_n // 8)
-    lane_off = (lambda x: x) if is_a else (lambda x: x)
-    group = _ixop(e, "arith.divsi", lane, _ix(e, 4))    # lane//4
-    r8 = _ix(e, 8)
-    row_str = _ix(e, kgs)                # (m, k_sf) row-major
+    l4 = _ixop(e, "arith.divsi", lane, _ix(e, 4))      # lane//4
+    l2 = _ixop(e, "arith.remsi", lane, _ix(e, 2))      # lane%2 (row select)
+    row_str = _ix(e, kgs)
     regs = []
-    for i in range(m_atoms):
-        base = _ixop(e, "arith.addi",
-                     _ixop(e, "arith.muli", wm, _ix(e, warp_m)),
-                     _ix(e, i * 16))
-        for j in range(2):
-            # reg j: rows {r, r+8} at k-group pair — byte pack (r,kg2j),(r+8,kg2j)
-            kg = int(kb) * 4 + 2 * j
-            r0 = _ixop(e, "arith.addi", base, group)
-            r1 = _ixop(e, "arith.addi", r0, r8)
-            o0 = _ixop(e, "arith.addi",
-                        _ixop(e, "arith.muli", r0, row_str), _ix(e, kg))
-            o1 = _ixop(e, "arith.addi",
-                        _ixop(e, "arith.muli", r1, row_str), _ix(e, kg + 1))
-            b0 = _load_u8(e, arr, o0)
-            b1 = _load_u8(e, arr, o1)
-            regs.append(_pack_bytes(e, b0, b1))
+    if is_a:
+        for i in range(2):                             # m-atoms (warp 32)
+            r = _ixop(e, "arith.addi",
+                      _ixop(e, "arith.muli", wm, _ix(e, 32)),
+                      _ix(e, i * 16))
+            r = _ixop(e, "arith.addi", r, l4)
+            r8 = _ixop(e, "arith.addi", r, _ixop(e, "arith.muli", l2, _ix(e, 8)))
+            base = _ixop(e, "arith.muli", r8, row_str)
+            regs.append(_load_b32(e, arr, _ixop(e, "arith.addi",
+                                                base, _ix(e, kb * 4))))
+    else:
+        for na in range(8):                            # n-atoms (warp 64)
+            c = _ixop(e, "arith.addi",
+                      _ixop(e, "arith.muli", wn, _ix(e, 64)),
+                      _ix(e, na * 8))
+            c = _ixop(e, "arith.addi", c, l4)
+            base = _ixop(e, "arith.muli", c, row_str)
+            regs.append(_load_b32(e, arr, _ixop(e, "arith.addi",
+                                                base, _ix(e, kb * 4))))
     _SF_SEQ += 1
     _SF_SLOTS.setdefault(which, {})[int(kb)] = regs
+
+
+def _load_b32(e, arr, off):
+    """Aligned 4-byte SF load (4 packed e4m3) from the smem byte array."""
+    from .emitter import SSA as _SSA
+
+    if not isinstance(off, _SSA):
+        off = e.ssa("index", f"arith.constant {int(off)} : index")
+    p = e.gep_smem(arr.ptr, off, "i8")
+    return e.ssa("i32", f"llvm.load {p.name} : !llvm.ptr<3> -> i32")
 
 
 _SF_SLOTS: dict = {}
@@ -846,6 +950,13 @@ def gemm_bs(mma, acc, a_list, b_list):
     kb = int(getattr(sfa_v, "k", a_k.k) or 0)
     sfa = _SF_SLOTS.get("A", {}).get(kb) or []
     sfb = _SF_SLOTS.get("B", {}).get(kb) or []
+    import os as _os
+    if _os.environ.get("DG_GEMM_DEBUG"):
+        import sys as _s
+        print(f"DBG gemm_bs: kb={kb} sfA={len(sfa)} sfB={len(sfb)} "
+              f"aregs={len(aregs)} bregs={len(bregs)} "
+              f"slotsA={sorted(_SF_SLOTS.get('A', {}).keys())}",
+              file=_s.stderr)
     mma_op = getattr(mma, "op", None)
     atom = getattr(mma_op, "shape_mnk", (16, 8, 64))
     # SM120 blockscaled warp grid: atom_layout (4,2,1) over tile (128,128)
@@ -863,11 +974,9 @@ def gemm_bs(mma, acc, a_list, b_list):
                   for j in range(4)]
             b2 = [bregs[na * 2 + j] if na * 2 + j < len(bregs) else zero32
                   for j in range(2)]
-            sa2 = [sfa[i * 2 + j] if i * 2 + j < len(sfa) else zero32
-                   for j in range(2)]
-            sb2 = [sfb[na * 2 + j] if na * 2 + j < len(sfb) else zero32
-                   for j in range(2)]
-            r = e.mma_mxf4nvf4(a4, b2, sa2, sb2, c4)
+            sa1 = [sfa[i] if i < len(sfa) else zero32]
+            sb1 = [sfb[na] if na < len(sfb) else zero32]
+            r = e.mma_mxf4nvf4(a4, b2, sa1, sb1, c4)
             for j in range(4):
                 acc.slots[c0 + j] = r[j]
 
@@ -887,6 +996,12 @@ def tma_partition(atom, cta_coord, cta_layout, smem_grouped, gmem_grouped):
             n *= int(d)
     else:
         n = int(getattr(arr, "count", 0))
+    # sub-byte dtypes: windows address BYTES in the i8-typed smem array
+    w = getattr(getattr(arr, "elem", None), "width", 32) or 32
+    if w < 8:
+        n = n // (8 // w) if w < 8 and 8 % w == 0 else n * w // 8
+    elif w == 8:
+        pass                             # 1 byte per element already
     sview = TmaSmemView(arr, n)
     box = tuple(int(b) for b in atom.box)       # fastest-first
     gview = TmaGmemView(atom, ("d0", "d1", "d2"), (box[1], box[0], 1))
@@ -924,7 +1039,14 @@ def tma_copy_partitioned(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):
         c = e.ssa("i32", f"arith.constant {int(tile)} : i32")
         return e.ssa("i32", f"arith.muli {v32.name}, {c.name} : i32")
 
-    coords = [_elem("d1", box[0]), _elem("d0", box[1])]
+    if len(box) == 4:
+        # SF rank-4 recipe: (rm, rk, 2, 256), box (256,2,2,1) — coords
+        # fastest-first: [inner 0, half 0, rk0 = kt*2, rm]
+        coords = [_elem("d1", 2), _elem("d0", 1)]
+        coords = [e.ssa("i32", "arith.constant 0 : i32"),
+                  e.ssa("i32", "arith.constant 0 : i32")] + coords
+    else:
+        coords = [_elem("d1", box[0]), _elem("d0", box[1])]
     desc = getattr(atom, "desc_ssa", None)
     if desc is None:
         raise ValueError("tma copy needs atom.desc_ssa (kernel param glue)")

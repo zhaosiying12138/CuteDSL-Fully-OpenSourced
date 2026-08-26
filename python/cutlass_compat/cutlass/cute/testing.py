@@ -39,3 +39,16 @@ def benchmark(func, workspace_generator=None, workspace_count=1,
     end.record()
     torch.cuda.synchronize()
     return start.elapsed_time(end) * 1000.0 / iterations  # µs per call
+
+
+def convert(src, dst=None, *a, **kw):
+    """cute.testing.convert(src_tensor, dst_tensor): elementwise copy from
+    src INTO dst (official argument order)."""
+    if dst is None:
+        return src
+    d = getattr(dst, "_torch", dst)
+    s_ = getattr(src, "_torch", src)
+    if hasattr(d, "element_type"):
+        d = d._torch
+    d.copy_(s_)
+    return dst
