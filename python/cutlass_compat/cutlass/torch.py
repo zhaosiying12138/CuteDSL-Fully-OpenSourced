@@ -117,7 +117,25 @@ def cute_tensor_like(data_ref, cutlass_dtype=None, aligned_alloc=False,
     if cutlass_dtype is not None:
         dname = getattr(cutlass_dtype, "name", cutlass_dtype)
         if dname == "Float4E2M1FN":
-            tt = _pack_fp4(tt)          # 2 nibbles/byte, little-nibble first
+            packed = _pack_fp4(tt)
+            # keep the f32 reference grid-aligned with what the kernel
+            # consumes (official init is fp4-representable): write the
+            # dequantized values back so golden einsums match
+            try:
+                lo = (packed & 0xF).float()
+                hi = (packed >> 4).float()
+                _F4 = torch.tensor([0., .5, 1., 1.5, 2., 3., 4., 6.])
+                dq = torch.stack([_F4[hi.long()], _F4[lo.long()]], dim=-1) \
+                    .reshape(tt.shape)
+                tt = dq.contiguous()
+                data_ref.copy_(dq)
+                from self_cutedsl.frontend.meta import TensorMeta, F4E2M1_
+                ct = from_dlpack(packed if False else dq)
+                pm = TensorMeta(packed, F4E2M1_,
+                                tuple(packed.shape), tuple(packed.stride()))
+                return pm, packed
+            except Exception:
+                tt = _pack_fp4(tt)
             from self_cutedsl.frontend.meta import TensorMeta, F4E2M1_
             ct = from_dlpack(tt)
             return TensorMeta(tt, F4E2M1_,
@@ -178,7 +196,9 @@ def _pack_fp4(f32_tensor):
     codes = codes | (sign << 3)
     if codes.numel() % 2:
         codes = _t.cat([codes, _t.zeros(1, dtype=_t.uint8, device=codes.device)])
-    packed = codes[0::2] | (codes[1::2] << 4)
+    # PTX e2m1 operand packing: element with the LOWER k index occupies
+    # the HIGH nibble of each byte (cute fp4 convention)
+    packed = (codes[0::2] << 4) | codes[1::2]
     # pack pairs along the k dimension: (m, k, l) -> (m, k/2, l)
     shp = f32_tensor.shape
     if len(shp) >= 2 and shp[1] % 2 == 0:

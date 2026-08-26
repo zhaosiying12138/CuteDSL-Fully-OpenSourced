@@ -518,7 +518,9 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
         import torch as _t
         strd = tuple(int(x) for x in getattr(gmem_tensor, "stride", ()))
         rm, rk, l = shp[3], shp[4], shp[5]
-        rm_str = (strd[3] if strd and strd[3] else None) or rk * 512
+        # permuted view (32,4,rm,4,rk,l): rm is mode 2 (stride rk*512);
+        # storage is the contiguous (l,rm,rk,32,4,4) blocked layout
+        rm_str = (strd[2] if strd and strd[2] else None) or rk * 512
         recipe = TensorMapRecipe(dtype=_t.uint8,
                                  shape=(rm, rk, 2, 256),
                                  strides_elems=(rm_str, 512, 256, 1),
@@ -661,7 +663,7 @@ def copy_tiled(tc, src, dst):
         l4 = _ixop(e, "arith.divsi", lane, _ix(e, 4))
         l4m = _ixop(e, "arith.remsi", lane, _ix(e, 4))
         byte_row = _ix(e, flat_str[0] // 2)   # bytes per m-row (fp4)
-        kb4 = _ixop(e, "arith.muli", _ix(e, src.k), _ix(e, 16))
+        kb4 = _ixop(e, "arith.muli", _ix(e, src.k), _ix(e, 32))
         for i in range(mm):
             r0 = _ixop(e, "arith.addi",
                        _ixop(e, "arith.muli", wm, _ix(e, warp_m)),
@@ -705,7 +707,7 @@ def copy_tiled(tc, src, dst):
         l4 = _ixop(e, "arith.divsi", lane, _ix(e, 4))
         l4m = _ixop(e, "arith.remsi", lane, _ix(e, 4))
         byte_row = _ix(e, flat_str[0] // 2)
-        kb4 = _ixop(e, "arith.muli", _ix(e, src.k), _ix(e, 16))
+        kb4 = _ixop(e, "arith.muli", _ix(e, src.k), _ix(e, 32))
         for na in range(mn):
             c0 = _ixop(e, "arith.addi",
                        _ixop(e, "arith.muli", wn, _ix(e, warp_n)),
@@ -884,29 +886,48 @@ def copy_sf(tc, src, dst):
     which = "A" if is_a else "B"
     l4 = _ixop(e, "arith.divsi", lane, _ix(e, 4))      # lane//4
     l2 = _ixop(e, "arith.remsi", lane, _ix(e, 2))      # lane%2 (row select)
-    row_str = _ix(e, kgs)
+    # stage window: rows*kgs bytes per stage (SF arrays are byte-typed)
+    win = smem_stage(arr, getattr(view, "stage", 0), rows * kgs)
+    soff = win.stage_offset
     regs = []
+    # blocked SMEM order from the SF TMA box: byte = (row%32)*16 +
+    # (row//32)*4 + kg  (i32-major, then i4, kg fastest)
+    def _sf_off(row):
+        i32p = _ixop(e, "arith.remsi", row, _ix(e, 32))
+        i4p = _ixop(e, "arith.divsi", row, _ix(e, 32))
+        return _ixop(e, "arith.addi",
+                     _ixop(e, "arith.addi",
+                           _ixop(e, "arith.muli", i32p, _ix(e, 16)),
+                           _ixop(e, "arith.muli", i4p, _ix(e, 4))),
+                     _ix(e, int(kb) * 4))
+
     if is_a:
         for i in range(2):                             # m-atoms (warp 32)
             r = _ixop(e, "arith.addi",
                       _ixop(e, "arith.muli", wm, _ix(e, 32)),
                       _ix(e, i * 16))
             r = _ixop(e, "arith.addi", r, l4)
-            r8 = _ixop(e, "arith.addi", r, _ixop(e, "arith.muli", l2, _ix(e, 8)))
-            base = _ixop(e, "arith.muli", r8, row_str)
+            r = _ixop(e, "arith.addi", r, _ixop(e, "arith.muli", l2, _ix(e, 8)))
             regs.append(_load_b32(e, arr, _ixop(e, "arith.addi",
-                                                base, _ix(e, kb * 4))))
+                                                soff, _sf_off(r))))
     else:
         for na in range(8):                            # n-atoms (warp 64)
             c = _ixop(e, "arith.addi",
                       _ixop(e, "arith.muli", wn, _ix(e, 64)),
                       _ix(e, na * 8))
             c = _ixop(e, "arith.addi", c, l4)
-            base = _ixop(e, "arith.muli", c, row_str)
             regs.append(_load_b32(e, arr, _ixop(e, "arith.addi",
-                                                base, _ix(e, kb * 4))))
+                                                soff, _sf_off(c))))
     _SF_SEQ += 1
     _SF_SLOTS.setdefault(which, {})[int(kb)] = regs
+
+
+def _bswap(e, v):
+    """32-bit byte reversal via inline PTX."""
+    return e.ssa(
+        "i32",
+        'nvvm.inline_ptx "prmt.b32 $0, $1, $1, 0x1032;" ro (' +
+        f"{v.name} : i32) -> i32")
 
 
 def _load_b32(e, arr, off):

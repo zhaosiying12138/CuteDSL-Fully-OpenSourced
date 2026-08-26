@@ -198,6 +198,10 @@ class _SF_copy_view:
         if len(slots) >= 2:
             return _SF_copy_view(self.tc, self.tile, slots[-2], slots[-1])
         if len(slots) == 1:
+            # first selector to arrive is the stage ([..., state.index]),
+            # the second is the k-block ([..., k])
+            if self.stage is None and self.k is None:
+                return _SF_copy_view(self.tc, self.tile, slots[0], None)
             return _SF_copy_view(self.tc, self.tile, self.stage, slots[0])
         return self
 

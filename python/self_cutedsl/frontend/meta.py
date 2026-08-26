@@ -65,12 +65,13 @@ class TensorMeta:
         self._modes = [(int(a), int(b)) for a, b in zip(self.shape, self.stride)]
 
     def group_modes_meta(self, i, j):
-        """Merge modes i..j into one (index math keeps the sub-strides)."""
-        subs = self._modes[i:j + 1]
+        """Merge modes i..j-1 into one (official exclusive upper bound;
+        index math keeps the sub-strides)."""
+        subs = self._modes[i:j]
         g = 1
         for sz, _ in subs:
             g *= sz
-        modes = self._modes[:i] + [(g, subs)] + self._modes[j + 1:]
+        modes = self._modes[:i] + [(g, subs)] + self._modes[j:]
         shp = tuple(m[0] for m in modes)
         strd = tuple(m[1] if isinstance(m[1], int) else m[1][0][1]
                      for m in modes)
@@ -85,9 +86,10 @@ class TensorMeta:
             if isinstance(mode[1], int):
                 idx += int(ci) * mode[1]
             else:
-                # merged group: decompose the digit over the sub-modes
+                # merged group: colexicographic — FIRST sub-mode fastest
+                # (m = i32 + 4*i4 + …; kg = j + 4*rk)
                 rem = int(ci)
-                for sz, st in reversed(mode[1]):
+                for sz, st in mode[1]:
                     idx += (rem % sz) * st
                     rem //= sz
         return idx
@@ -113,7 +115,20 @@ class TensorMeta:
         return self._torch.reshape(-1)[self._flat_index(coord)]
 
     def __setitem__(self, coord, v):
-        self._torch.reshape(-1)[self._flat_index(coord)] = v
+        # non-contiguous permuted views: reshape(-1) would COPY — write
+        # through the view's own multi-index instead
+        idx = self._flat_index(coord)
+        t = self._torch
+        shp = tuple(t.shape)
+        strd = tuple(t.stride())
+        # decompose the flat view-index over dims sorted by stride desc
+        order = sorted(range(len(shp)), key=lambda d: -strd[d])
+        rem = idx
+        coord_nd = [0] * len(shp)
+        for d in order:
+            coord_nd[d] = rem // strd[d]
+            rem %= strd[d]
+        t[tuple(coord_nd)] = v
 
     def mark_compact_shape_dynamic(self, *a, **kw):
         return self

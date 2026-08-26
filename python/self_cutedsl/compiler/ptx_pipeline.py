@@ -44,6 +44,10 @@ def compile_mlir_to_ptx(mlir_text: str | Path, extra_passes: list[str] | None = 
     cmd = [str(CUTLASS_COMPILER), *DEFAULT_PASSES, *(extra_passes or [])]
     proc = subprocess.run(cmd, input=mlir_text, capture_output=True, text=True)
     if proc.returncode != 0:
+        import os as _os
+        if _os.environ.get("DG_DUMP_MLIR"):
+            with open("/tmp/fail_mod.mlir", "w") as f:
+                f.write(mlir_text)
         raise RuntimeError(
             f"cutlass-compiler failed ({proc.returncode}):\n{proc.stderr[:4000]}")
     out = proc.stdout
