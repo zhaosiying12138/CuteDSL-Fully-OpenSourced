@@ -168,7 +168,7 @@ Honest boundaries (general properties, not shape special-cases):
 | RMSNorm + FP4 quant fusion (1007 parametrized tests) | FlashInfer `cute_dsl/rmsnorm_fp4quant.py` @ 9d33a28e | ✅ PASS | 🔨 M2+ |
 | Add + RMSNorm + FP4 quant fusion (1188 tests) | FlashInfer `cute_dsl/add_rmsnorm_fp4quant.py` | ✅ PASS | 🔨 M2+ |
 | W4A16 FP4 fused MoE B12x (142 functional tests incl. 36 numerical-accuracy configs) | FlashInfer `fused_moe/cute_dsl/blackwell_sm12x/` | ✅ PASS | 🔨 M6+ |
-| FlashMLA / MLA decode (SM100 CuTeDSL example) | CUTLASS `blackwell/attention/mla/mla_decode_fp16.py` | ❌ **not runnable on this GPU by ANY stack** — official CuTeDSL arch-gate rejects sm_120a (`expects sm_100a/sm_100f/sm_110a/sm_103f… got sm_120a`; tcgen05/TMEM is data-center-Blackwell-only hardware). Evidence: `.venv-reference` probe, 2026-08-26 | n/a (hardware boundary) |
+| FlashMLA / MLA decode | (a) CUTLASS `blackwell/attention/mla/mla_decode_fp16.py`; (b) IISuperluminaLII/FlashMLA_Windows_Linux_sm120; (c) fernandaspets/vllm_FlashMLA | ❌ **not runnable on this GPU via official CuTeDSL — verified empirically 2026-08-27**: (a) official CuTeDSL arch-gate rejects sm_120a (`expects sm_100a/sm_100f/sm_110a… got sm_120a` — tcgen05/TMEM is data-center-Blackwell-only hardware); (b)+(c) cloned & audited: both are **nvcc/CUDA-extension C++ implementations** (18/21 .cu kernels, zero CuTeDSL/`cutlass.cute`/`cute.jit` references; Python files are test/bench harness only) — import in `.venv-reference` fails with `Unable to import FlashMLA CUDA extension` (repo b) / `No module named flash_mla.cuda` (repo c). Neither can "work on official CuTeDSL" — they are not CuTeDSL programs at all | n/a (hardware boundary) |
 
 ### Self-stack verified so far (M4 complete)
 
