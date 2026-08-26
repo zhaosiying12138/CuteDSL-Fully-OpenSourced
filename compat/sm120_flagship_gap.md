@@ -68,24 +68,17 @@ M7 blockscaled).
 - Performance parity with the official compiler on the elementwise
   class (101–228% across shapes).
 
-## Persistent multi-tile-per-CTA pipeline — known residual (2026-08-26)
+## Persistent multi-tile-per-CTA pipeline — RESOLVED (2026-08-26, 1ba06db)
 
-The persistent kernel skeleton (grid-stride work loop, per-tile barrier
-re-init, staged SMEM, TMA S2G epilogue) is verified golden when the grid
-covers all tiles (1 tile per CTA, incl. k_tiles=4 with refills — 5
-configurations in tests/python/test_persistent_gemm.py).
+The "residual" was TWO PTX memory-model violations, now fixed and
+verified by 25x flake tests (0 fails) across multi-tile, refill, and
+full-wave configurations up to 2048² (1024 CTAs):
 
-With MULTIPLE tiles per CTA (m_ctas < total tiles), a deterministic
-~1% element residual appears in second tiles (bad map: specific 8-col
-stripes; repro: 256x128x128 G=4). Four phase-tracking schemes were tried
-(absolute arm counters; per-tile re-init; global-arm parity; skip/always
-trailing refills) — all analytically correct per PTX mbarrier semantics,
-residual persists identically. compute-sanitizer racecheck was attempted
-(very slow on this kernel; killed). Single-tile-per-CTA with the SAME
-refill logic is 100% golden, so the in-tile pipeline itself is sound;
-the fault is in cross-tile state (leading suspects: an interplay between
-the epilogue's async bulk-store wait scope and the barrier re-init, or
-an MLIR-level ordering issue in the nested dynamic-region emission).
-Recorded honestly; the shipped test matrix uses grid-covers-tiles until
-root-caused. dense_gemm.py unmodified-run additionally still needs the
-items below.
+1. Missing `fence.proxy.async.shared::cta` between generic SMEM stores
+   and the TMA async-proxy read (S2G epilogue) — systematic corruption.
+2. `mbarrier.init` executed by all threads on one object (PTX UB) —
+   rare intermittent corruption at high CTA counts.
+
+Persistent GEMM now: 9-config golden matrix + 31 TFLOP/s (72% of
+official dense_gemm on this GPU). Remaining for dense_gemm.py
+unmodified-run: the library-driver layer below.
