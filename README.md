@@ -142,6 +142,22 @@ Honest boundaries (general properties, not shape special-cases):
 - oversubscribed persistent grids (more tiles than CTAs) need `scf.while`
   in the tracer — grid-covering persistent runs trace single-trip.
 
+### Status: M8 release (2026-08-27)
+
+- 98/98 tests green (`pytest tests/ -q`): object-model algebra/pipeline/dense
+  GEMM, verbatim flagship kernels (elementwise, dense_gemm, blockscaled
+  cooperative), stage-model + fragment-mode regressions.
+- compute-sanitizer: memcheck 0 errors (blockscaled 3-shape), initcheck 0
+  (dense), racecheck 0 hazards (4-k-tile stage-wrap config), synccheck 0.
+- Perf ledger: `artifacts/perf/comparison.md` — elementwise 101–228%,
+  dense_gemm 83%@2048³ / 44%@4096³ / 95% boundary, blockscaled nvfp4
+  67%@4096³.
+- SBOM + anti-cheat attestations: `artifacts/SBOM.md`.
+- Honest boundaries: dense_gemm tile_m=128 SMEM overflow (official skips
+  too) & tile_n=128 epi; blockscaled sv=32 hang & unaligned-boundary host
+  alignment; oversubscribed persistent grids need scf.while; FlashMLA/
+  MLA-decode = SM100-tcgen05 hardware boundary (official arch-gate).
+
 ### Status: M0 complete — official baseline frozen (2026-08-25)
 
 | Operator | Source | Official baseline | Self stack |
