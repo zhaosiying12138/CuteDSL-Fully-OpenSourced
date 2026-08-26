@@ -1,0 +1,17 @@
+{
+  "captured": "2026-08-27",
+  "gpu": "RTX 5090 Laptop (sm_120a)",
+  "kernel": "blackwell_geforce/dense_blockscaled_gemm_persistent_cooperative.py UNMODIFIED (nvfp4: f4xf4 + e4m3 SF, sv=16, tile 128x128x128)",
+  "cases": [
+    {"shape": [1024,1024,1024,1], "official_us": 21.2, "self_us": 54.0,
+     "official_tflops": 101.3, "self_tflops": 39.7, "ratio": 0.39},
+    {"shape": [1024,4096,4096,1], "official_us": 68.6, "self_us": 212.2,
+     "official_tflops": 500.9, "self_tflops": 161.9, "ratio": 0.32},
+    {"shape": [4096,4096,4096,1], "official_us": 225.2, "self_us": 334.0,
+     "official_tflops": 610.2, "self_tflops": 411.5, "ratio": 0.67}
+  ],
+  "boundaries": {
+    "sv=32 mxfp4/e8m0": "hangs (kernel deadlock; honest boundary)",
+    "unaligned boundary (128,130,4104)": "host-side 'Invalid tensor alignment' (official runner computes alignment from shape; boundary needs unaligned TMA recipe)"
+  }
+}

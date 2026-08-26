@@ -75,7 +75,10 @@ class DriverJit:
         _check(err, "cuDevicePrimaryCtxRetain")
         _check(cu.cuCtxSetCurrent(self._ctx), "cuCtxSetCurrent")
         import os as _os
-        if _os.environ.get("DG_DUMP_PTX"):
+        if _os.environ.get("DG_USE_PTX"):
+            with open(_os.environ["DG_USE_PTX"], "rb") as _f:
+                ptx = _f.read() + b"\0"
+        elif _os.environ.get("DG_DUMP_PTX"):
             _n = getattr(DriverJit, "_dump_n", 0) + 1
             DriverJit._dump_n = _n
             with open(f"/tmp/dg_mod_{_n}.ptx", "w") as f:

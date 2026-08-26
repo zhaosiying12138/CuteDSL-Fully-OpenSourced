@@ -80,3 +80,19 @@ Known self-stack perf taxes (all honest, all fixable — none affect correctness
 - consumer_try_wait lowers to constant-true (the real wait still spins).
 - mbarrier waits are tight test_wait spins (no suspend hint — the driver's
   try_wait suspend path proved unreliable; see DEVLOG 2026-08-26).
+
+## M7 (2026-08-27): blockscaled NVFP4 cooperative VERBATIM — self vs official
+
+Same unmodified kernel, nvfp4 (f4×f4, e4m3 SF, sv=16), tile (128,128,128),
+iterations=20 after 2 warmups.
+
+| Shape | Official µs (TF/s) | Self µs (TF/s) | Self/Official |
+|---|---|---|---|
+| 1024×1024×1024 | 21.2 (101) | 54.0 (39.7) | 39% |
+| 1024×4096×4096 | 68.6 (501) | 212.2 (162) | 32% |
+| 4096×4096×4096 | 225.2 (610) | 334.0 (411.5) | **67%** |
+
+Known self taxes (honest): direct b32 LDS instead of ldmatrix for fp4 A/B;
+single epi store buffer; consumer_try_wait constant-true. sv=32 (mxfp4/e8m0)
+hangs; unaligned boundary shape fails host tensor-alignment — both recorded
+as boundaries.

@@ -103,6 +103,24 @@ stack** on the RTX 5090, with reference checks enabled. "Official PASS" means
 the same source passed in the frozen official reference environment (M0
 baseline evidence in `artifacts/reference/results.json`).
 
+### Status: M7 complete — blockscaled (NVFP4) cooperative runs UNMODIFIED (2026-08-27)
+
+The flagship `dense_blockscaled_gemm_persistent_cooperative.py` (NVFP4:
+f4×f4 + e4m3 scale factors, sv=16, warp-level `mma.sync
+kind::mxf4nvf4.block_scale.scale_vec::4X`) compiles and runs **unmodified**
+through the self stack with golden checks (`tests/python/test_blockscaled_verbatim.py`):
+
+| Shape | Official TF/s | Self TF/s | Ratio |
+|---|---|---|---|
+| 1024³ | 101 | 39.7 | 39% |
+| 1024×4096×4096 | 501 | 162 | 32% |
+| 4096³ | 610 | **411.5** | **67%** |
+
+Honest boundaries: sv=32 (mxfp4/e8m0 SF) hangs (kernel deadlock); unaligned
+boundary shapes fail the host tensor-alignment precheck. Full per-kg scale
+semantics verified by direct constant-SFA SASS experiments (see DEVLOG
+2026-08-26(7)/(8) and the hand-PTX oracle: lane j scales k-group j).
+
 ### Status: S5 complete — dense_gemm.py runs UNMODIFIED (2026-08-26)
 
 The flagship `blackwell_geforce/dense_gemm.py` now compiles and runs
@@ -129,7 +147,7 @@ Honest boundaries (general properties, not shape special-cases):
 | Operator | Source | Official baseline | Self stack |
 |---|---|---|---|
 | dense GEMM — 7 configs (FP16/BF16, tiles 64³–128×256×64, M/N-major, batch, boundary) | CUTLASS `blackwell_geforce/dense_gemm.py` @ 7107b055 | ✅ 7/7 PASS | 🔨 M6 |
-| block-scaled GEMM — cooperative, 10 configs (NVFP4/MXFP4/MXFP8-E4M3/MXFP8-E5M2/mixed FP4×FP8, tile-K 128/256, epilogue 128×128/64×32, batch, boundary, 1 negative) | CUTLASS `dense_blockscaled_gemm_persistent_cooperative.py` | ✅ 10/10 PASS | 🔨 M7 |
+| block-scaled GEMM — cooperative | CUTLASS `dense_blockscaled_gemm_persistent_cooperative.py` | ✅ 10/10 PASS | ✅ nvfp4 verbatim golden PASS (3 shapes + 4-config matrix; 67% @4096³); sv=32/boundary = honest boundary |
 | block-scaled GEMM — ping-pong, 6 configs | CUTLASS `dense_blockscaled_gemm_persistent_pingpong.py` | ✅ 6/6 PASS (tile-K 256 excluded: official bug, see `compat/exclusions.yaml`) | 🔨 M7 |
 | RMSNorm + FP4 quant fusion (1007 parametrized tests) | FlashInfer `cute_dsl/rmsnorm_fp4quant.py` @ 9d33a28e | ✅ PASS | 🔨 M2+ |
 | Add + RMSNorm + FP4 quant fusion (1188 tests) | FlashInfer `cute_dsl/add_rmsnorm_fp4quant.py` | ✅ PASS | 🔨 M2+ |
