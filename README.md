@@ -130,6 +130,8 @@ baseline evidence in `artifacts/reference/results.json`).
 | 2-stage pipelined multi-CTA TMA GEMM (staged SMEM, parity rollover) golden | `tests/python/test_tma_pipeline_gemm.py` |
 | Wide-N (64-col) 8-warp pipelined TMA GEMM golden | `tests/python/test_tma_gemm_wide_n.py` |
 | **Persistent full-matrix TMA GEMM with TMA S2G epilogue — 9 configs, 31 TFLOP/s (72% of official)** | `tests/python/test_persistent_gemm.py` |
+| **Object model (PLAN_object_model): Python emits cute.* text; algebra owned by C++ passes** — spike + 27 tests | `tests/python/test_object_model_*.py` |
+| **S4 dense_gemm-shaped kernel from the full object model (algebra emission + trait table + pipeline driver + generalized TMA), 5 golden configs** | `tests/python/test_object_model_dense_gemm.py` |
 | PTX fingerprints: ld.global.v4, ldmatrix, mma.sync.aligned.m16n8k16, cp.async.bulk.tensor, mbarrier.* | test asserts |
 
 ### Flagship status (dense_gemm / blockscaled)
@@ -146,6 +148,15 @@ warps), deeper stages, 128-wide tiles, TMA multicast.
 Two PTX memory-model races root-caused on the way (missing
 fence.proxy.async before TMA S2G; multi-thread mbarrier.init UB) —
 details in compat/sm120_flagship_gap.md and git history.
+
+**Object-model architecture (the go-forward route, per PLAN_object_model.md):**
+Python never reimplements layout algebra. The emission layer
+(`python/self_cutedsl/object_model/`) serializes meta-objects to
+`!cute<...>` textual MLIR; result types are computed by the
+cutlass-compiler **verifier itself** (probe-and-read-back); trait tables
+drive MMA partitioning; driver objects (PipelineTmaAsync) sit on the
+verified mbarrier/TMA builtins. New atoms/swizzles are data (table rows
++ serializers), not code.
 
 Toolchain frozen in `compat/sm120_toolchain.lock.yaml`: pinned LLVM `23a60f15`
 (5193/5193 targets), cutlass_compiler @ `7107b055` with **check-cute 236/236
