@@ -113,6 +113,7 @@ against torch einsum (`tests/python/test_dense_gemm_verbatim.py`):
 | Config (tile 64×64×64) | Result |
 |---|---|
 | 128×128×128 (example default, official tolerance 0.01) | ✅ PASS |
+| 4104×2056×512 (boundary, OOB tiles) | ✅ PASS — 95% of official throughput |
 | 128×256×128 / 256×256×128 | ✅ PASS (atol 0.05: f16 ULP at these magnitudes) |
 | 128×128×256 (4 k-tiles, double stage wrap) | ✅ PASS |
 

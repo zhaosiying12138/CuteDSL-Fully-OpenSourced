@@ -71,6 +71,7 @@ parentheses).
 | 128×128×128 (default) | — (tiny) | 189.0 | — |
 | 2048×2048×2048 | 321.9 (53.4) | 388.7 (44.2) | **83%** |
 | 4096×4096×4096 | 1671.9 (82.2) [baseline log: 1604.8] | 3790.7 (36.3) | **44%** |
+| 4104×2056×512 (boundary, M0 baseline log) | 459.4 (41.4) | 221.2 (39.1) | **95%** |
 
 Known self-stack perf taxes (all honest, all fixable — none affect correctness):
 - ldmatrix reads from unswizzled K-major SMEM (bank conflicts; the official

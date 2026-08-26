@@ -29,6 +29,20 @@
    "self_tflops": 36.3,
    "ratio": 0.44,
    "note": "official baseline log measured 1604.8us"
+  },
+  {
+   "shape": [
+    4104,
+    2056,
+    512,
+    1
+   ],
+   "official_us": 459.4,
+   "self_us": 221.2,
+   "official_tflops": 41.4,
+   "self_tflops": 39.1,
+   "ratio": 0.95,
+   "note": "boundary case from the M0 baseline log; K=512 has fewer k-tiles so the swizzle tax is small"
   }
  ]
 }
