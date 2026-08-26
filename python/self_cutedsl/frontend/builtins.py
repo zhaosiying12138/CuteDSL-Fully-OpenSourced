@@ -546,6 +546,8 @@ def mul_i32(a, b):
 
 def sub_i32(a, b):
     e = _emitter()
+    if isinstance(b, int):
+        b = e.ssa("i32", f"arith.constant {int(b)} : i32")
     return e.ssa("i32", f"arith.subi {a.name}, {b.name} : i32")
 
 
@@ -569,9 +571,27 @@ def mbarrier_inval_and_init(bar, count: int):
 
 def div_i32(a, b):
     e = _emitter()
+    if isinstance(b, int):
+        b = e.ssa("i32", f"arith.constant {int(b)} : i32")
     return e.ssa("i32", f"arith.divsi {a.name}, {b.name} : i32")
 
 
 def fence_proxy():
     """cute.arch.fence_proxy — async-proxy fence (shared::cta)."""
     _emitter().fence_proxy_async_shared()
+
+
+def make_barrier_array(name: str, count: int):
+    """Int64 smem array for mbarrier storage (driver objects)."""
+    e = _emitter()
+    e.smem_globals.append(
+        f"    llvm.mlir.global internal @{name}() "
+        f"{{addr_space = 3 : i32, alignment = 8 : i64}} "
+        f": !llvm.array<{int(count)} x i64>")
+
+    class _B:
+        pass
+    b = _B()
+    b.ptr = e.ssa("!llvm.ptr<3>",
+                  f"llvm.mlir.addressof @{name} : !llvm.ptr<3>")
+    return b

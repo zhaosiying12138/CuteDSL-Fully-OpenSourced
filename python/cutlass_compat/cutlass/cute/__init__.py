@@ -342,3 +342,9 @@ def fence_proxy():
     from self_cutedsl.frontend import builtins
 
     builtins.fence_proxy()
+
+
+def make_barrier_array(name, count):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.make_barrier_array(name, count)
