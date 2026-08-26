@@ -61,3 +61,47 @@ def current_stream():
     import torch as _t
 
     return _t.cuda.current_stream()
+
+
+def matrix(l, m_or_n, k_or_m, major, dtype, gen=None):
+    """cutlass_torch.matrix(l, m, k, major, dtype) — synthetic GEMM operand.
+
+    Layout convention: returns an (m, k) or (k, m) torch CPU tensor per
+    the requested major ('k' -> row-major (m,k); 'm' -> (k,m) k-major).
+    """
+    import torch as _t
+
+    _torch_to_dsl = {v: k for k, v in _TORCH_OF.items()}
+    tdtype = _torch_to_dsl.get(getattr(dtype, "name", dtype), _t.float16)
+    l = int(l)
+    if major == "k":
+        shape = ((m_or_n, k_or_m) if l == 1 else (l, m_or_n, k_or_m))
+        return _t.randn(shape, dtype=tdtype)
+    shape = ((k_or_m, m_or_n) if l == 1 else (l, k_or_m, m_or_n))
+    return _t.randn(shape, dtype=tdtype).contiguous()
+
+
+def get_workspace_count(one_workspace_bytes, warmup, iterations):
+    return max(1, min(10, iterations))
+
+
+def default_stream():
+    import torch as _t
+
+    return _t.cuda.current_stream().cuda_stream
+
+
+def current_stream():
+    import torch as _t
+
+    return _t.cuda.current_stream().cuda_stream
+
+
+def cute_tensor_like(t):
+    from cutlass.cute.runtime import from_dlpack
+
+    return from_dlpack(torch.empty_like(getattr(t, "_torch", t)))
+
+
+def convert_cute_tensor(t):
+    return getattr(t, "_torch", t)

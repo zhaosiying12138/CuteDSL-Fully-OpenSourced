@@ -21,7 +21,7 @@ def __getattr__(name):
     if name == 'arch':
         from self_cutedsl.frontend import builtins
         return builtins.arch
-    if name in ('nvgpu', 'runtime', 'testing'):
+    if name in ('nvgpu', 'runtime', 'testing', 'struct'):
         from importlib import import_module
         return import_module(f'cutlass.cute.{name}')
     raise AttributeError(name)
@@ -53,6 +53,30 @@ class Layout:
 
 
 class Coord:
+    pass
+
+
+class ComposedLayout:
+    """Annotation marker: staged/swizzled smem layout meta."""
+
+
+class CopyAtom:
+    """Annotation marker: copy atom object (TMA/CopyUniversal)."""
+
+
+class TiledMma:
+    """Annotation marker: tiled MMA object."""
+
+
+class Shape:
+    pass
+
+
+class Swizzle:
+    pass
+
+
+class TensorSSA:
     pass
 
 

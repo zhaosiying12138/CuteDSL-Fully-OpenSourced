@@ -10,6 +10,8 @@ The compat marker lets conformance tooling distinguish us:
 """
 from . import cute  # noqa: F401  (cutlass.cute)
 from . import torch  # noqa: F401  (cutlass.torch)
+from . import pipeline  # noqa: F401  (cutlass.pipeline)
+from . import utils  # noqa: F401  (cutlass.utils)
 from .dtypes import (  # noqa: F401
     Boolean,
     Constexpr,
