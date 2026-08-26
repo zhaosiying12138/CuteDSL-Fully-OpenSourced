@@ -434,7 +434,8 @@ def gemm(tiled_mma, acc, a_frag, b_frag, *rest):
     from self_cutedsl.frontend import builtins
     from self_cutedsl.frontend.cute_objects import FragK
 
-    if isinstance(a_frag, (list, tuple)):   # block-scaled [data, SF] form
+    if isinstance(a_frag, (list, tuple)) and len(a_frag) == 2 \
+            and hasattr(a_frag[1], "smem_view"):   # block-scaled [data, SF]
         builtins.gemm_bs(tiled_mma, acc, a_frag, b_frag)
         return acc
     if isinstance(a_frag, FragK):      # 5-arg dense_gemm form

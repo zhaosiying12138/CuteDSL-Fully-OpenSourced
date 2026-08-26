@@ -648,10 +648,6 @@ def gemm_tv(mma, acc, a_k, b_k):
     assert isinstance(a_k, FragK) and isinstance(b_k, FragK)
     aregs = a_k.frag.slots[a_k.k]
     bregs = b_k.frag.slots[b_k.k]
-    import sys as _s
-    print(f"DBG gemm_bs: aregs={len(aregs)} bregs={len(bregs)} "
-          f"sfa={len(sfa) if sfa else 0} sfb={len(sfb) if sfb else 0} "
-          f"mm={mm} mn={mn} acc={acc.count}", file=_s.stderr)
     am, an, _ = getattr(mma.op, "shape_mnk", (16, 8, 16))
     warp_m, warp_n = mma.tile_mn
     mm, mn = warp_m // am, warp_n // an
