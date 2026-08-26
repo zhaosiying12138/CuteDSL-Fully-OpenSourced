@@ -52,11 +52,60 @@ class CuteLayout:
         # hierarchical strides flatten losslessly for linear combination
         return _eval_rec(_flatten_tuple(coord), _flatten_tuple(self.stride))
 
+    def __getitem__(self, i):
+        return _flatten(self.shape)[i]
+
+    def __len__(self):
+        return len(_flatten(self.shape))
+
+    def get_hier_coord(self, i):
+        """Linear index -> coordinate tuple over the flattened shape."""
+        flat = _flatten(self.shape)
+        coord, rem = [], int(i)
+        for d in reversed(flat):
+            coord.append(rem % int(d))
+            rem //= int(d)
+        return tuple(reversed(coord))
+
+    def get_flat_coord(self, idx):
+        """flat index -> coord. SSA inputs emit div/mod arithmetic via
+        the active kernel emitter; python ints evaluate on host."""
+        shp = _flatten(self.shape)
+        from .emitter import SSA
+        if isinstance(idx, SSA):
+            e = idx._emitter if hasattr(idx, "_emitter") else None
+            # resolve emitter through builtins' active interpreter
+            from . import builtins as _b
+            e = _b._emitter()
+            out = []
+            cur = e.idx_binop("arith.index_cast_u", idx) if idx.type != "index" else idx
+            cur_type = "index"
+            for d in reversed(shp):
+                c = e.ssa("index", f"arith.constant {int(d)} : index")
+                out.append(e.idx_binop("arith.remsi", cur, d))
+                cur = e.idx_binop("arith.divsi", cur, d)
+            return tuple(reversed(out))
+        out = []
+        for d in reversed(shp):
+            out.append(idx % d)
+            idx //= d
+        return tuple(reversed(out))
+
+    def __getitem__(self, i):
+        from .layout import _flatten_tuple
+        return _flatten_tuple(self.shape)[i]
+
+    def __len__(self):
+        from .layout import _flatten_tuple
+        return len(_flatten_tuple(self.shape))
+
 
 # ---------------------------------------------------------------- helpers
 def _tuplify(x):
     if isinstance(x, (tuple, list)):
         return tuple(_tuplify(i) for i in x)
+    if isinstance(x, CuteLayout):
+        return _tuplify(x.shape)
     return int(x)
 
 

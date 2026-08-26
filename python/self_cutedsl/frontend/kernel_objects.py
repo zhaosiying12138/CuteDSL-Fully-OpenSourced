@@ -10,7 +10,27 @@ class KernelTensor:
     def __init__(self, ptr: SSA, tiled_meta, element_type):
         self.ptr = ptr
         self.meta = tiled_meta          # TiledTensorMeta or TensorMeta
-        self.element_type = element_type
+        self._element_type = element_type
+
+    @property
+    def shape(self):
+        from .meta import TiledTensorMeta
+
+        if isinstance(self.meta, TiledTensorMeta):
+            return self.meta.shape
+        return self.meta.shape
+
+    @property
+    def stride(self):
+        return getattr(self.meta, "stride", None)
+
+    @property
+    def element_type(self):
+        return self._element_type
+
+    @element_type.setter
+    def element_type(self, v):
+        self._element_type = v
 
     @property
     def is_tiled(self) -> bool:
@@ -74,6 +94,22 @@ class Fragment:
     def shape(self):
         return (self.count,)
 
+    def __getitem__(self, i):
+        return self.slots[int(i)]
+
+    def __setitem__(self, i, v):
+        self.slots[int(i)] = v
+
+    def fill(self, value):
+        """accumulators.fill(0.0) — all slots to a constant."""
+        if float(value) != 0.0:
+            raise NotImplementedError("Fragment.fill(nonzero)")
+        from .builtins import _emitter
+
+        e = _emitter()
+        for i in range(self.count):
+            self.slots[i] = e.ssa("f32", "arith.constant 0.0 : f32")
+
     def load(self) -> "FragmentView":
         if self.vecs:
             return FragmentView([], vecs=list(self.vecs))
@@ -93,6 +129,11 @@ class Fragment:
 
 class FragmentView:
     """Result of Fragment.load(): scalar SSAs or vector-granular SSAs."""
+
+    def to(self, dtype):
+        from . import builtins as _b
+
+        return _b.frag_to(self, dtype)
 
     def __init__(self, values=None, vecs=None):
         self.values = values or []

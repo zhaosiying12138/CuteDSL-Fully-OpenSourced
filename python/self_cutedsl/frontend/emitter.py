@@ -287,15 +287,29 @@ class KernelEmitter:
                  f": !llvm.ptr<3>, i32 -> i64")
 
     def mbarrier_try_wait_parity(self, bar: SSA, phase) -> None:
+        """Wait for the phase parity via a polling test_wait loop. The
+        nvvm try_wait op's suspend-time hint proved unreliable on this
+        driver (missed wakeups -> hangs / 100ms sleeps); the plain spin
+        is the standard CUTLASS wait idiom."""
         if isinstance(phase, SSA):
             p = phase
             if p.type != "i32":
-                p = self.ssa("i32", f"arith.index_cast {phase.name} : {phase.type} to i32")
+                p = self.ssa("i32",
+                             f"arith.index_cast {phase.name} : {phase.type} to i32")
         else:
             p = self.ssa("i32", f"arith.constant {int(phase)} : i32")
-        t = self.ssa("i32", "arith.constant 100000000 : i32")
-        self.raw(f"nvvm.mbarrier.try_wait.parity {bar.name}, {p.name}, {t.name} "
-                 f": !llvm.ptr<3>, i32, i32")
+        bar32 = self.ssa("i32", f"llvm.ptrtoint {bar.name} : "
+                                f"!llvm.ptr<3> to i32")
+        self._bw_id = getattr(self, "_bw_id", 0) + 1
+        i = self._bw_id
+        self.raw(
+            'nvvm.inline_ptx "{'
+            '.reg .pred P1; '
+            f'LABW{i}: '
+            'mbarrier.test_wait.parity.shared.b64 P1, [$0], $1; '
+            f'@!P1 bra.uni LABW{i}; '
+            f'DN{i}: add.u32 $0, $0, 0;}}" ro (' +
+            f"{bar32.name}, {p.name} : i32, i32)")
 
     def tma_load(self, smem: SSA, tma_ptr: SSA, bar: SSA, coords: list) -> None:
         """cp.async.bulk.tensor.<dim>d G2S with mbarrier complete_tx."""

@@ -165,6 +165,24 @@ def cute_size(x, mode=None) -> int:
             k = mode[0] if isinstance(mode, (list, tuple)) else mode
             return _prod((x.tile, x.rest)[k])
         return _prod(x.tile) * _prod(x.rest)
+    from .cute_objects import (Tensor as _HostTensor, FragmentViewA,
+                               FragmentViewB, R2SSmemView, _flatten)
+
+    if isinstance(x, (FragmentViewA, FragmentViewB)):
+        return x.size(mode)
+    if isinstance(x, R2SSmemView):
+        if mode is not None:
+            k = mode[0] if isinstance(mode, (list, tuple)) else mode
+            return x.shape[k]
+        n = 1
+        for d in x.shape:
+            n *= int(d)
+        return n
+    if isinstance(x, _HostTensor):
+        if mode is not None:
+            k = mode[0] if isinstance(mode, (list, tuple)) else mode
+            return _prod(x.layout.shape[k])   # top-level mode entry
+        return _prod(_flatten(x.layout.shape))
     if isinstance(x, (int, tuple)):
         return _prod(x)
     raise TypeError(f"cute.size on {type(x)}")

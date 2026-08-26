@@ -32,6 +32,52 @@ class _Arch:
         e = _emitter()
         return (e.block_dim("x"), e.block_dim("y"), e.block_dim("z"))
 
+    def grid_dim(self):
+        e = _emitter()
+        return (e.ssa("index", "gpu.grid_dim x"),
+                e.ssa("index", "gpu.grid_dim y"),
+                e.ssa("index", "gpu.grid_dim z"))
+
+    def warp_idx(self):
+        """warp index as (wid, _, _) — tid / 32 (warp-uniform)."""
+        e = _emitter()
+        w = e.ssa("index", "arith.constant 32 : index")
+        tid = e.thread_id("x")
+        wid = e.idx_binop("arith.divsi", tid, w)
+        return (wid, e.ssa("index", "arith.constant 0 : index"),
+                e.ssa("index", "arith.constant 0 : index"))
+
+    def setmaxregister_increase(self, byte_count):
+        # warp-specialized register rebalance (constexpr byte count baked in)
+        _emitter().raw(
+            f'nvvm.inline_ptx "setmaxnreg.inc.sync.aligned.u32 {int(byte_count)} ;"')
+
+    def setmaxregister_decrease(self, byte_count):
+        _emitter().raw(
+            f'nvvm.inline_ptx "setmaxnreg.dec.sync.aligned.u32 {int(byte_count)} ;"')
+
+    def fence_proxy(self, kind, space=None):
+        # cute.arch.fence_proxy("async.shared", space="cta")
+        _emitter().fence_proxy_async_shared()
+
+    def make_warp_uniform(self, v):
+        # tid/32-derived values are already warp-uniform; the (wid,0,0)
+        # thread-index tuple reduces to its linear warp id (both dense_gemm
+        # flavors compare `warp_idx == 0` after this call).
+        if isinstance(v, (tuple, list)) and v:
+            return v[0]
+        return v
+
+    def block_idx_in_cluster(self):
+        # single-CTA cluster profile: rank is always 0
+        return _emitter().ssa("index", "arith.constant 0 : index")
+
+    def cluster_arrive_relaxed(self):
+        _emitter().raw('nvvm.inline_ptx "barrier.cluster.arrive.relaxed;"')
+
+    def cluster_wait(self):
+        _emitter().raw('nvvm.inline_ptx "barrier.cluster.wait;"')
+
     def sync_threads(self):
         _emitter().raw("gpu.barrier")
 
@@ -258,7 +304,11 @@ def _flat2(x):
             for i in v:
                 rec(i)
         else:
-            out.append(int(v))
+            from .layout import CuteLayout as _CL
+            if isinstance(v, _CL):
+                rec(v.shape)
+            else:
+                out.append(int(v))
 
     rec(x)
     if len(out) < 2:
@@ -279,6 +329,25 @@ class SmemArray:
         self.ptr = ptr          # SSA !llvm.ptr<3>
         self.count = count
         self.elem = elem        # ElementType
+
+    def get_tensor(self, layout=None, swizzle=None):
+        """Official storage.sX.get_tensor(outer, swizzle=inner): returns the
+        SMEM tensor view — a Tensor whose base is this array, so tile
+        algebra (group_modes/partition) carries the pointer along."""
+        from .cute_objects import Tensor as HostTensor, Layout as HostLayout
+
+        if layout is None:
+            return self
+        if not isinstance(layout, HostLayout):
+            from .cute_objects import make_layout as _ml
+
+            layout = _ml(layout)
+        view = HostTensor(self, layout, self.elem)
+        view.swizzle = swizzle
+        return view
+
+    def data_ptr(self):
+        return self.ptr
 
 
 def make_smem_array(name: str, count: int, element=None):
@@ -343,6 +412,7 @@ def make_mbarrier(name: str, count: int):
 def tma_load(tma, smem, bar, coords):
     """cute.nvgpu.cpasync TMA G2S: smem tile (SmemArray/staged) + mbarrier."""
     e = _emitter()
+    tma = getattr(tma, "desc_ssa", tma)   # kernel param glue
     smem_ptr = getattr(smem, "ptr", smem)
     off = getattr(smem, "stage_offset", None)
     if off is not None:
@@ -356,7 +426,7 @@ def tma_load(tma, smem, bar, coords):
 def tma_store(tma, smem, coords):
     e = _emitter()
     smem_ptr = getattr(smem, "ptr", smem)
-    tma_ptr = getattr(tma, "desc_ptr", tma)
+    tma_ptr = getattr(tma, "desc_ssa", None) or getattr(tma, "desc_ptr", tma)
     e.tma_store(tma_ptr, smem_ptr, coords)
 
 
@@ -406,7 +476,9 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
     from .meta import TensorMeta
     from ..runtime.tensor_map import TensorMapRecipe, CUtensorMapView
 
-    if hasattr(smem_layout_or_tensor, "layout"):
+    if hasattr(smem_layout_or_tensor, "outer"):        # ComposedLayoutStaged
+        smem_lay = smem_layout_or_tensor.outer
+    elif hasattr(smem_layout_or_tensor, "layout"):
         smem_lay = smem_layout_or_tensor.layout
     else:
         smem_lay = smem_layout_or_tensor
@@ -428,13 +500,317 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
         recipe = None
     atom = TmaAtom(op, None, cta_layout or make_layout((1, 1)), smem_lay, box)
     atom.recipe = recipe
-    return atom, None  # (atom, tma_tensor placeholder — host view only)
+    atom.tma_view = _materialize_tma_view(recipe, gmem_tensor)
+    return atom, _tma_view(gmem_tensor)
+
+
+def _materialize_tma_view(recipe, gmem_tensor):
+    """Stage the encoded CUtensorMap in device memory at host-trace time
+    (single-shot path; repeated launches reuse the same device copy)."""
+    if recipe is None:
+        return None
+    from ..runtime.tensor_map import CUtensorMapView
+
+    torch_t = getattr(gmem_tensor, "_torch", None)
+    if torch_t is None or not getattr(torch_t, "is_cuda", False):
+        return None
+    return CUtensorMapView(recipe, torch_t)
+
+
+def _tma_view(gmem_tensor):
+    """Coordinate-only gmem view (official TmaTensor analogue): carries the
+    global shape/stride for tile algebra; data flows via the TMA descriptor,
+    so there is no device pointer behind it."""
+    from .cute_objects import Tensor as HostTensor, Layout as HostLayout
+    from .meta import TensorMeta
+
+    if not isinstance(gmem_tensor, TensorMeta):
+        return None
+    shp, str_ = list(gmem_tensor.shape), list(gmem_tensor.stride)
+    if len(shp) == 2:                       # (m,k) with implicit L=1 -> (m,k,l)
+        shp.append(1)
+        str_.append(shp[0] * str_[0])       # L stride = m*k elements
+    view = HostTensor(None, HostLayout(tuple(shp), tuple(str_)),
+                      gmem_tensor.element_type)
+    view.is_tma_view = True
+    return view
+
+
+# ------------------------------------------------ smem->rmem copy lowering
+def _ix(e, v):
+    """const or SSA -> index-typed SSA"""
+    from .emitter import SSA as _SSA
+
+    if isinstance(v, _SSA):
+        return v if v.type == "index" else e.ssa(
+            "index", f"arith.index_cast {v.name} : i32 to index")
+    return e.ssa("index", f"arith.constant {int(v)} : index")
+
+
+def _ixop(e, op, a, b):
+    return e.idx_binop(op, a, b)
+
+
+def _lane0_predicate():
+    """i1 SSA: this thread is lane 0 of its warp (TMA/expect_tx leader)."""
+    e = _emitter()
+    t = e.thread_id("x")
+    w = e.ssa("index", "arith.constant 32 : index")
+    lane = e.idx_binop("arith.remsi", t, w)
+    z = e.ssa("index", "arith.constant 0 : index")
+    return e.ssa("i1", f"arith.cmpi eq, {lane.name}, {z.name} : index")
+
+
+def copy_tiled(tc, src, dst):
+    """cute.copy(smem_tiled_copy_A/B, tCsA_p[...k], tCrA[...k]): emit the
+    per-thread ldmatrix sequence from the mma trait geometry."""
+    from .cute_objects import SmemCopySrc, FragK, _flatten
+
+    e = _emitter()
+    assert isinstance(src, SmemCopySrc) and isinstance(dst, FragK), \
+        "tiled copy needs (SmemCopySrc, FragK)"
+    tile = src.tile
+    arr = tile.base                    # SmemArray
+    lay = tile.layout
+    flat_shp = [int(d) for d in _flatten(lay.shape)]
+    flat_str = [int(d) for d in _flatten(lay.stride)]
+    elems_per_stage = flat_shp[0] * flat_shp[1]
+    tidx = _ix(e, tc.tidx)
+
+    win = smem_stage(arr, src.stage, elems_per_stage)
+    soff = win.stage_offset
+
+    mma = tc.mma
+    am, an, ak = getattr(mma.op, "shape_mnk", (16, 8, 16))
+    warps_m = int(_flatten(mma.atom_layout)[0]) if mma.atom_layout else 1
+    warp_m, warp_n = mma.tile_mn
+    mm = warp_m // am
+    mn = warp_n // an
+    row_str = _ix(e, flat_str[0])      # stride of the non-contiguous dim
+
+    lane = _ixop(e, "arith.remsi", tidx, _ix(e, 32))
+    wid = _ixop(e, "arith.divsi", tidx, _ix(e, 32))
+    wm = _ixop(e, "arith.remsi", wid, _ix(e, warps_m))
+    wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
+    k0 = _ixop(e, "arith.muli", _ix(e, src.k), _ix(e, 16))
+
+    if tc.which == "A":
+        # smem layout (m,k):(k,1): ldmatrix.x4 rows=m (16B = 8 halves of k)
+        regs = []
+        for i in range(mm):
+            m_base = _ixop(e, "arith.addi",
+                           _ixop(e, "arith.muli", wm, _ix(e, warp_m)),
+                           _ix(e, i * 16))
+            m_row = _ixop(e, "arith.addi", m_base,
+                          _ixop(e, "arith.remsi", lane, _ix(e, 16)))
+            half8 = _ixop(e, "arith.muli",
+                          _ixop(e, "arith.divsi", lane, _ix(e, 16)), _ix(e, 8))
+            off = _ixop(e, "arith.addi", soff,
+                        _ixop(e, "arith.addi",
+                              _ixop(e, "arith.muli", m_row, row_str),
+                              _ixop(e, "arith.addi", k0, half8)))
+            f = e.ldmatrix(e.gep_smem(arr.ptr, off), 4, trans=False)
+            regs.extend(e.extract_i32(f, j) for j in range(4))
+        dst.frag.slots[dst.k] = regs
+    else:
+        # smem layout (n,k):(k,1): ldmatrix.x2 rows=n; mat1 = +8 k elements
+        regs = []
+        for na in range(mn):
+            n_base = _ixop(e, "arith.addi",
+                           _ixop(e, "arith.muli", wn, _ix(e, warp_n)),
+                           _ix(e, na * 8))
+            n_row = _ixop(e, "arith.addi", n_base,
+                          _ixop(e, "arith.remsi", lane, _ix(e, 8)))
+            kk8 = _ixop(e, "arith.muli",
+                        _ixop(e, "arith.divsi", lane, _ix(e, 8)), _ix(e, 8))
+            off = _ixop(e, "arith.addi", soff,
+                        _ixop(e, "arith.addi",
+                              _ixop(e, "arith.muli", n_row, row_str),
+                              _ixop(e, "arith.addi", k0, kk8)))
+            f = e.ldmatrix(e.gep_smem(arr.ptr, off), 2, trans=False)
+            regs.extend(e.extract_i32(f, j) for j in range(2))
+        dst.frag.slots[dst.k] = regs
+
+
+def gemm_tv(mma, acc, a_k, b_k):
+    """cute.gemm(tiled_mma, acc_fragment, tCrA[k], tCrB[k], acc_fragment):
+    per (m_atom, n_atom) mma.sync; acc slots updated in place."""
+    from .cute_objects import FragK
+
+    e = _emitter()
+    assert isinstance(a_k, FragK) and isinstance(b_k, FragK)
+    aregs = a_k.frag.slots[a_k.k]
+    bregs = b_k.frag.slots[b_k.k]
+    am, an, _ = getattr(mma.op, "shape_mnk", (16, 8, 16))
+    warp_m, warp_n = mma.tile_mn
+    mm, mn = warp_m // am, warp_n // an
+    for i in range(mm):
+        a4 = [e.bitcast_f16x2(aregs[i * 4 + j]) for j in range(4)]
+        for na in range(mn):
+            b2 = [e.bitcast_f16x2(bregs[na * 2 + j]) for j in range(2)]
+            c0 = (i * mn + na) * 4
+            c4 = [acc.slots.get(c0 + j) for j in range(4)]
+            out = e.mma_f16(a4, b2, c4)
+            for j in range(4):
+                acc.slots[c0 + j] = out[j]
+
+
+def copy_r2s(tc, src, dst):
+    """cute.copy(tiled_copy_r2s, tRS_rD_out, tRS_sD[(..., buf)]): store the
+    thread's converted accumulator regs to sC at the trait C coordinates
+    (+ epi stage window)."""
+    from .cute_objects import R2SSmemView, AccumRetile, _flatten
+
+    e = _emitter()
+    frag = src
+    if isinstance(src, AccumRetile):
+        frag = src.frag
+    assert isinstance(dst, R2SSmemView)
+    tile = dst.tile
+    arr = tile.base                    # SmemArray
+    lay = tile.layout
+    flat_shp = [int(d) for d in _flatten(lay.shape)]
+    flat_str = [int(d) for d in _flatten(lay.stride)]
+    elems_per_stage = flat_shp[0] * flat_shp[1]
+    win = smem_stage(arr, dst.stage, elems_per_stage)
+    soff = win.stage_offset
+
+    mma = tc.mma
+    am, an, _ = getattr(mma.op, "shape_mnk", (16, 8, 16))
+    warps_m = int(_flatten(mma.atom_layout)[0]) if mma.atom_layout else 1
+    warp_m, warp_n = mma.tile_mn
+    mm, mn = warp_m // am, warp_n // an
+    row_str = _ix(e, flat_str[0])      # (m,n):(n,1) -> row stride = n
+
+    tidx = _ix(e, tc.tidx)
+    lane = _ixop(e, "arith.remsi", tidx, _ix(e, 32))
+    wid = _ixop(e, "arith.divsi", tidx, _ix(e, 32))
+    wm = _ixop(e, "arith.remsi", wid, _ix(e, warps_m))
+    wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
+    group = _ixop(e, "arith.divsi", lane, _ix(e, 4))    # lane//4
+    t2 = _ixop(e, "arith.muli",
+               _ixop(e, "arith.remsi", lane, _ix(e, 4)), _ix(e, 2))
+
+    # slot order matches gemm_tv: (i*MMA_N + na)*4 + j
+    ty = "f16" if getattr(frag, "dtype", None) is not None and \
+        frag.dtype.name in ("f16", "Float16") else \
+        ("f16" if flat_str and flat_shp[1] * 2 <= 128 else "f32")
+    # element type from the fragment's stored values
+    sample = next(iter(frag.slots.values()), None)
+    vty = getattr(sample, "type", "f16")
+    ety = "f16" if "f16" in vty or frag.dtype.name in ("f16", "Float16") \
+        else "f32"
+    for i in range(mm):
+        row_base = _ixop(e, "arith.addi",
+                         _ixop(e, "arith.muli", wm, _ix(e, warp_m)),
+                         _ix(e, i * 16))
+        for na in range(mn):
+            col_base = _ixop(e, "arith.addi",
+                             _ixop(e, "arith.muli", wn, _ix(e, warp_n)),
+                             _ix(e, na * 8))
+            for j in range(4):
+                c0 = (i * mn + na) * 4 + j
+                v = frag.slots.get(c0)
+                if v is None:
+                    continue
+                # j: 0 (r,c) 1 (r,c+1) 2 (r+8,c) 3 (r+8,c+1) — trait C coords
+                r8 = _ix(e, 8 if j >= 2 else 0)
+                c1 = _ix(e, 1 if j % 2 == 1 else 0)
+                row = _ixop(e, "arith.addi", _ixop(e, "arith.addi",
+                                                   row_base, group), r8)
+                col = _ixop(e, "arith.addi", col_base,
+                            _ixop(e, "arith.addi", t2, c1))
+                off = _ixop(e, "arith.addi", soff,
+                            _ixop(e, "arith.addi",
+                                  _ixop(e, "arith.muli", row, row_str), col))
+                p = e.gep_smem(arr.ptr, off, ety)
+                e.raw(f"llvm.store {v.name}, {p.name} : {vty}, !llvm.ptr<3>")
+
+
+def frag_to(view, dtype):
+    """FragmentView.to(dtype): elementwise truncf f32->f16."""
+    e = _emitter()
+    out = []
+    for v in view.values:
+        if dtype.name in ("f16", "Float16") and v.type == "f32":
+            out.append(e.ssa("f16", f"arith.truncf {v.name} : f32 to f16"))
+        else:
+            out.append(v)
+    from .kernel_objects import FragmentView
+
+    return FragmentView(out)
 
 
 def tma_partition(atom, cta_coord, cta_layout, smem_grouped, gmem_grouped):
-    from .cute_objects import TmaPartitioned
+    """Project smem/gmem grouped views onto this CTA's tile coordinates.
+    Produces (TmaSmemView, TmaGmemView): dense_gemm subscripts record the
+    stage / gmem tile offsets; cute.copy lowers to the bulk-tensor PTX."""
+    from .cute_objects import (TmaPartitioned, TmaSmemView, TmaGmemView,
+                               Tensor as HT, _flatten)
 
-    return TmaPartitioned(smem_grouped, gmem_grouped, cta_coord, atom.box)
+    arr = smem_grouped.base if isinstance(smem_grouped, HT) else smem_grouped
+    lay = smem_grouped.layout if isinstance(smem_grouped, HT) else None
+    n = 1
+    if lay is not None:
+        for d in _flatten(lay.shape):
+            n *= int(d)
+    else:
+        n = int(getattr(arr, "count", 0))
+    sview = TmaSmemView(arr, n)
+    box = tuple(int(b) for b in atom.box)       # fastest-first
+    gview = TmaGmemView(atom, ("d0", "d1", "d2"), (box[1], box[0], 1))
+    # gmem tile coords recorded by view subscripts (flat modes: the loop
+    # coords sit at positions 2 (slow dim) and 3 (fast dim) by construction)
+    co = dict(getattr(gmem_grouped, "coord_offs", {}))
+    if 2 in co:
+        gview.offs["d0"] = co[2]
+    if 3 in co:
+        gview.offs["d1"] = co[3]
+    return TmaPartitioned(sview, gview, cta_coord, box)
+
+
+def tma_copy_partitioned(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):
+    """cute.copy(tma_atom, gmem_view, smem_view[, tma_bar_ptr][, mcast_mask])
+    -> cp.async.bulk.tensor (G2S or S2G) with coords from the view offsets."""
+    from .cute_objects import TmaGmemView
+    from .emitter import SSA as _SSA
+
+    e = _emitter()
+    if isinstance(src, TmaGmemView):
+        gv, smem_win = src, dst            # G2S load
+    else:
+        gv, smem_win = dst, src            # S2G store
+        e.fence_proxy_async_shared()
+    box = tuple(int(b) for b in atom.box)  # fastest-first
+    offs = gv.offs
+
+    def _elem(dim, tile):
+        v = offs.get(dim, 0)
+        if not isinstance(v, _SSA):
+            return e.ssa("i32", f"arith.constant {int(v) * int(tile)} : i32")
+        v32 = v if v.type == "i32" else e.ssa(
+            "i32", f"arith.index_cast {v.name} : {v.type} to i32")
+        c = e.ssa("i32", f"arith.constant {int(tile)} : i32")
+        return e.ssa("i32", f"arith.muli {v32.name}, {c.name} : i32")
+
+    coords = [_elem("d1", box[0]), _elem("d0", box[1])]
+    desc = getattr(atom, "desc_ssa", None)
+    if desc is None:
+        raise ValueError("tma copy needs atom.desc_ssa (kernel param glue)")
+    from ..object_model import tma as _otma
+
+    # TMA bulk ops are leader-issued (lane 0): every thread of the issuing
+    # warp reaches cute.copy, but one issue arms the barrier transaction
+    e0 = _emitter()
+    pred = _lane0_predicate()
+    e0.open_if(pred)
+    if isinstance(src, TmaGmemView):
+        if tma_bar_ptr is None:
+            raise ValueError("G2S tma copy needs tma_bar_ptr")
+        _otma.tma_issue(smem_win, desc, tma_bar_ptr, coords)
+    else:
+        _otma.tma_store_issue(desc, smem_win, coords)
+    e0.close_if()
 
 
 def copy(atom_or_view, *rest, mbarrier=None, pred=None):
@@ -495,12 +871,12 @@ def _mma_group_key(c_reg, e):
 
 
 def bool_to_i32(b):
-    """i1 SSA -> i32 SSA (0/1) via arith.extsi."""
+    """i1 SSA -> i32 SSA (0/1) — zero-extend: sign-extending true gives -1."""
     e = _emitter()
     if isinstance(b, bool):
         return e.ssa("i32", f"arith.constant {1 if b else 0} : i32")
     assert getattr(b, "type", "") == "i1"
-    return e.ssa("i32", f"arith.extsi {b.name} : i1 to i32")
+    return e.ssa("i32", f"arith.extui {b.name} : i1 to i32")
 
 
 def add_i32(a, b):
@@ -595,3 +971,16 @@ def make_barrier_array(name: str, count: int):
     b.ptr = e.ssa("!llvm.ptr<3>",
                   f"llvm.mlir.addressof @{name} : !llvm.ptr<3>")
     return b
+
+
+def make_rmem_tensor(shape, dtype):
+    """cute.make_rmem_tensor(shape, dtype) — register fragment tensor."""
+    from .kernel_objects import Fragment
+    from .meta import BOOL, F32, F16
+
+    n = 1
+    for d in (shape if isinstance(shape, (tuple, list)) else (shape,)):
+        n *= int(d)
+    elem = {"Boolean": BOOL, "Float32": F32, "Float16": F16}.get(
+        getattr(dtype, "name", ""), F32)
+    return Fragment(n, elem)

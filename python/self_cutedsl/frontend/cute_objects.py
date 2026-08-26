@@ -21,7 +21,11 @@ def _flatten(x):
             for i in v:
                 rec(i)
         else:
-            out.append(int(v))
+            from .layout import CuteLayout as _CL
+            if isinstance(v, _CL):
+                rec(v.shape)
+            else:
+                out.append(int(v))
 
     rec(x)
     return out
@@ -53,6 +57,49 @@ class Layout:
     def __repr__(self):
         return f"Layout({_render(self.shape)}:{_render(self.stride)})"
 
+    def __getitem__(self, i):
+        if isinstance(i, tuple) and len(i) == 2 and isinstance(i[1], (tuple, list)) \
+                and isinstance(self.shape, tuple) and len(self.shape) == 2 \
+                and isinstance(self.shape[1], (tuple, list)):
+            # ((tile),(rest))[k, (None,...)] — dense_gemm grid-shape idiom:
+            # select tile group k, keep the flagged rest modes
+            rest_s = _flatten(self.shape[1])
+            rest_d = _flatten(self.stride[1])
+            keep_s = [s for s, c in zip(rest_s, i[1]) if c is None]
+            keep_d = [d for d, c in zip(rest_d, i[1]) if c is None]
+            return Layout(tuple(keep_s), tuple(keep_d))
+        if isinstance(i, tuple):
+            # coord-style get: (int|(None,...), ...) — project modes
+            keep = []
+            flat_s = _flatten(self.shape)
+            flat_d = _flatten(self.stride)
+            for s0, d0, c in zip(flat_s, flat_d, i):
+                if c is None:
+                    keep.append(s0)
+            return Layout(tuple(keep), tuple(flat_d[:len(keep)]))
+        return _flatten(self.shape)[i]
+
+    def get_hier_coord(self, i):
+        """Linear index -> coordinate tuple over the flattened shape."""
+        flat = _flatten(self.shape)
+        coord, rem = [], int(i)
+        for d in reversed(flat):
+            coord.append(rem % int(d))
+            rem //= int(d)
+        return tuple(reversed(coord))
+
+    def __len__(self):
+        return len(_flatten(self.shape))
+
+    def get_flat_coord(self, idx):
+        """flat index -> flat coord tuple (row-major traversal)."""
+        shp = _flatten(self.shape)
+        out = []
+        for d in reversed(shp):
+            out.append(idx % d)
+            idx //= d
+        return tuple(reversed(out))
+
 
 def _nest(x):
     if isinstance(x, (tuple, list)):
@@ -67,6 +114,8 @@ def _render(t):
 
 
 def make_layout(shape, stride=None, order=None):
+    if isinstance(shape, Layout):
+        return shape
     flat = _flatten(shape)
     if stride is None and order is None:
         stride = _row_major_nested(shape)
@@ -111,6 +160,45 @@ class Tensor:
     def type(self):
         return f"cutlass.Tensor(element={getattr(self.element, 'name', '?')}, shape={self.shape})"
 
+    def __getitem__(self, idx):
+        """Coord selection over flat modes: None keeps, SSA/int selects
+        (mode dropped from the layout, offset recorded in coord_offs)."""
+        idx = idx if isinstance(idx, tuple) else (idx,)
+        # ((tile),(rest))[(k, (None,...))] — hierarchical grid idiom:
+        # select tile group k, keep the flagged rest modes
+        if len(idx) == 2 and isinstance(idx[0], int) \
+                and isinstance(idx[1], (tuple, list)) \
+                and isinstance(self.layout.shape, tuple) \
+                and len(self.layout.shape) == 2 \
+                and isinstance(self.layout.shape[1], (tuple, list)):
+            rest_s = _flatten(self.layout.shape[1])
+            rest_d = _flatten(self.layout.stride[1])
+            keep_s = [x for x, c in zip(rest_s, idx[1]) if c is None]
+            keep_d = [x for x, c in zip(rest_d, idx[1]) if c is None]
+            nv = Tensor(self.base, Layout(tuple(keep_s), tuple(keep_d)),
+                        self.element, self.origin)
+            nv.coord_offs = dict(getattr(self, "coord_offs", {}))
+            nv.swizzle = getattr(self, "swizzle", None)
+            return nv
+        flat_s = list(_flatten(self.layout.shape))
+        flat_d = list(_flatten(self.layout.stride))
+        if len(idx) > len(flat_s):
+            raise NotImplementedError(f"coord {idx} over rank {len(flat_s)}")
+        offs = dict(getattr(self, "coord_offs", {}))
+        keep_s, keep_d = [], []
+        for m, (s0, d0, c) in enumerate(zip(flat_s, flat_d,
+                                            idx + (None,) * (len(flat_s) - len(idx)))):
+            if c is None:
+                keep_s.append(s0)
+                keep_d.append(d0)
+            else:
+                offs[m] = c
+        nv = Tensor(self.base, Layout(tuple(keep_s), tuple(keep_d)),
+                    self.element, self.origin)
+        nv.coord_offs = offs
+        nv.swizzle = getattr(self, "swizzle", None)
+        return nv
+
 
 def make_tensor(base, layout, element):
     return Tensor(base, layout, element)
@@ -128,8 +216,10 @@ def group_modes(tensor_or_layout, i: int, j: int):
     new_stride = tuple(str_[i:j + 1]) and _stride_for_group(shp, str_, i, j) + tuple(str_[j + 1:])
     out = Layout(new_shape, _stride_for_group(shp, str_, i, j) + tuple(str_[j + 1:]))
     if isinstance(tensor_or_layout, Tensor):
-        return Tensor(tensor_or_layout.base, out, tensor_or_layout.element,
-                      tensor_or_layout.origin)
+        nv = Tensor(tensor_or_layout.base, out, tensor_or_layout.element,
+                    tensor_or_layout.origin)
+        nv.coord_offs = dict(getattr(tensor_or_layout, "coord_offs", {}))
+        return nv
     return out
 
 
@@ -140,19 +230,26 @@ def _stride_for_group(shp, str_, i, j):
 
 
 def zipped_divide(tensor_or_layout, tiler):
-    """Divide into ((tile), (rest)) hierarchical layout."""
+    """Divide into ((tile), (rest)) hierarchical layout; modes beyond the
+    tiler rank ride the rest group unchanged (the implicit L mode)."""
     lay = tensor_or_layout.layout if isinstance(tensor_or_layout, Tensor) else tensor_or_layout
     tshp = _flatten(tiler)
     shp = _flatten(lay.shape)
     strd = _flatten(lay.stride)
-    rest = tuple(-(-s // t) for s, t in zip(shp, tshp))
+    pad = (1,) * (len(shp) - len(tshp))
+    tshp_padded = tuple(tshp) + pad
+    rest = tuple(-(-s // t) for s, t in zip(shp, tshp_padded))
+    tshp = tuple(tshp) + ()      # tile group keeps the tiler's own rank
     tile_layout = Layout(tuple(tshp), tuple(strd[:len(tshp)]))
     rest_shape = tuple(rest)
     if isinstance(tensor_or_layout, Tensor):
-        return Tensor(tensor_or_layout.base,
-                      Layout((tile_layout.shape, rest_shape),
-                             (tile_layout.stride, _row_major_nested(rest_shape))),
-                      tensor_or_layout.element, tensor_or_layout.origin)
+        nv = Tensor(tensor_or_layout.base,
+                    Layout((tile_layout.shape, rest_shape),
+                           (tile_layout.stride, _row_major_nested(rest_shape))),
+                    tensor_or_layout.element, tensor_or_layout.origin)
+        nv.coord_offs = dict(getattr(tensor_or_layout, "coord_offs", {}))
+        nv.swizzle = getattr(tensor_or_layout, "swizzle", None)
+        return nv
     return Layout((tile_layout.shape, rest_shape),
                   (tile_layout.stride, _row_major_nested(rest_shape)))
 
@@ -181,9 +278,14 @@ def _select_rest(tiled, coord):
         strides.append(acc)
         acc *= d
     strides.reverse()
-    new_lay = Layout((tile_shape, tuple(keep_shape)),
-                     (tile_stride, tuple(strides)))
-    return Tensor(tiled.base, new_lay, tiled.element, tiled.origin)
+    # flat top-level modes: (tile..., kept rest...) — official profile
+    # convention for local_tile (size(mode=[3]) indexes loopK directly)
+    new_lay = Layout(tuple(_flatten(tile_shape)) + tuple(keep_shape),
+                     tuple(_flatten(tile_stride)) + tuple(strides))
+    nv = Tensor(tiled.base, new_lay, tiled.element, tiled.origin)
+    nv.coord_offs = dict(getattr(tiled, "coord_offs", {}))
+    nv.swizzle = getattr(tiled, "swizzle", None)
+    return nv
 
 
 def slice_(layout_or_tensor, coord):
@@ -259,15 +361,109 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_tile_layout, cta_layout=None,
                    smem_tile_layout, box)
 
 
+class TmaSmemView:
+    """tAsA from tma_partition: staged smem destination; [(None, stage)]
+    windows the array at stage (stage may be SSA)."""
+
+    def __init__(self, arr, elems_per_stage):
+        self.arr = arr                  # SmemArray
+        self.elems_per_stage = elems_per_stage
+
+    def __getitem__(self, idx):
+        idx = idx if isinstance(idx, tuple) else (idx,)
+        slots = [c for c in idx if c is not None]
+        assert len(slots) == 1, f"tma smem subscript {idx}"
+        from . import builtins as _b
+
+        return _b.smem_stage(self.arr, slots[0], self.elems_per_stage)
+
+    def data_ptr(self):
+        return self.arr.ptr
+
+
+class TmaGmemView:
+    """tAgA/bSG_gD from tma_partition: gmem side carrying tile-unit
+    offsets per logical dim. Subscripts select progressively: an optional
+    leading TMA slot, then one coordinate per remaining dim (None keeps
+    the dim, SSA/int records the offset and drops it)."""
+
+    def __init__(self, atom, dim_names, tile_sizes):
+        self.atom = atom
+        self.dims = tuple(dim_names)    # e.g. ('m','k','l')
+        self.tiles = tuple(tile_sizes)  # per-dim tile extent in elements
+        self.offs = {}                  # dim -> SSA/int (tile units)
+
+    def __getitem__(self, idx):
+        idx = idx if isinstance(idx, tuple) else (idx,)
+        if len(idx) == len(self.dims) + 1:
+            idx = idx[1:]               # drop the TMA slot
+        if len(idx) == 2 and isinstance(idx[0], int) and \
+                isinstance(idx[1], (tuple, list)):
+            idx = tuple(idx[1])         # (tile_idx, coords) hierarchical form
+        if len(idx) == 2 and idx[0] is None and \
+                isinstance(idx[1], (tuple, list)):
+            grp = tuple(idx[1])         # (None, coords) group form
+            # shorter groups map onto the leading dims (epi sub-tiling)
+            idx = grp + (None,) * (len(self.dims) - len(grp))
+        if len(idx) != len(self.dims):
+            raise NotImplementedError(
+                f"tma gmem subscript {idx} over dims {self.dims}")
+        keep = [(d, t) for d, t, c in zip(self.dims, self.tiles, idx)
+                if c is None]
+        nv = TmaGmemView(self.atom,
+                         tuple(d for d, _ in keep),
+                         tuple(t for _, t in keep))
+        nv.offs = dict(self.offs)
+        for d, c in zip(self.dims, idx):
+            if c is None:
+                continue
+            if d in nv.offs:
+                nv.offs[d] = _add_offsets(nv.offs[d], c)
+            else:
+                nv.offs[d] = c
+        return nv
+
+
+def _add_offsets(a, b):
+    """Combine tile-unit offsets (int fold; SSA via i32 arith)."""
+    if isinstance(a, int) and isinstance(b, int):
+        return a + b
+    from .emitter import SSA as _SSA
+
+    if isinstance(a, int) and a == 0:
+        return b
+    if isinstance(b, int) and b == 0:
+        return a
+    from . import builtins as _b
+
+    e = _b._emitter()
+
+    def _i32(v):
+        if isinstance(v, _SSA):
+            return v if v.type == "i32" else e.ssa(
+                "i32", f"arith.index_cast {v.name} : {v.type} to i32")
+        return e.ssa("i32", f"arith.constant {int(v)} : i32")
+
+    return _b.add_i32(_i32(a), _i32(b))
+
+
 class TmaPartitioned:
-    """(smem_view, gmem_view) pair from tma_partition: carries the SSA
-    coordinate of this CTA within the cluster for box addressing."""
+    """(smem_view, gmem_view) pair from tma_partition."""
 
     def __init__(self, smem_view, gmem_view, cta_coord_ssa, box):
         self.smem_view = smem_view
         self.gmem_view = gmem_view
         self.cta_coord_ssa = cta_coord_ssa
         self.box = box
+
+    def __iter__(self):
+        return iter((self.smem_view, self.gmem_view))
+
+    def __len__(self):
+        return 2
+
+    def __getitem__(self, i):
+        return (self.smem_view, self.gmem_view)[i]
 
 
 def tma_partition(atom, cta_coord, cta_layout, smem_tensor_grouped,
@@ -344,21 +540,215 @@ class MmaOperandAtomView:
         self.idx = idx
 
 
+def _frag_atom_grid(part):
+    """(MMA_M, MMA_N, MMA_K) atom grid of a warp's fragment over its tile:
+    warp tile from tiled_mma, K extent from the smem tile layout."""
+    mma = part.mma
+    am, an, ak = getattr(mma.op, "shape_mnk", (16, 8, 16))
+    warp_m, warp_n = mma.tile_mn
+    tile = part.tile
+    lay = tile.layout if hasattr(tile, "layout") else tile
+    flat = _flatten(lay.shape)
+    k_ext = max(flat) if len(flat) >= 2 else ak   # (m,k)/(n,k): k is 2nd
+    mma_k = max(1, k_ext // ak)
+    return warp_m // am, warp_n // an, mma_k
+
+
 class FragmentViewA:
+    """make_fragment_A: per-thread operand registers, keyed by k_block.
+    slots[k] = [SSA i32] * (4 * MMA_M) — ldmatrix regs, bitcast at mma."""
+
     def __init__(self, view):
         self.view = view
+        self.slots: dict[int, list] = {}
+        self.retile_tc = None
+
+    def size(self, mode=None):
+        mm, _, mk = _frag_atom_grid(self.view.part)
+        grid = (mm, 1, mk)
+        return grid[mode[0]] if mode is not None else mm * mk
+
+    @property
+    def mma(self):
+        return self.view.part.mma
+
+    def __getitem__(self, idx):
+        # (None, None, k) — k_block selection for gemm/copy targets
+        k = idx[2] if isinstance(idx, tuple) and len(idx) == 3 else idx
+        return FragK(self, int(_const_of(k)))
 
 
-class FragmentViewB:
-    def __init__(self, view):
-        self.view = view
+class FragmentViewB(FragmentViewA):
+    def size(self, mode=None):
+        _, mn, mk = _frag_atom_grid(self.view.part)
+        grid = (1, mn, mk)
+        return grid[mode[0]] if mode is not None else mn * mk
+
+
+class FragK:
+    """tCrX[None, None, k] — a fragment sliced at one k block."""
+
+    def __init__(self, frag, k):
+        self.frag = frag
+        self.k = k
+
+
+def _const_of(v):
+    from .emitter import SSA as _SSA
+
+    if isinstance(v, _SSA):
+        raise ValueError(f"k-block index must be constexpr, got SSA {v.name}")
+    return int(v)
+
+
+# ------------------------------------------------- r2s epilogue copies
+class TiledCopyCAtom:
+    """make_tiled_copy_C_atom(stmatrix_atom, tiled_mma)."""
+
+    def __init__(self, atom, mma):
+        self.atom = atom
+        self.mma = mma
+
+
+class TiledCopyR2S:
+    """make_tiled_copy_S(r2s_atom, tiled_copy_C): rmem->smem epilogue copy
+    with the mma accumulator (trait-table C) value layout."""
+
+    def __init__(self, atom, tiled_copy_c):
+        self.atom = atom
+        self.tiled_copy_c = tiled_copy_c
+        self.mma = tiled_copy_c.mma
+        self.tidx = None
+
+    def get_slice(self, tidx):
+        self.tidx = tidx
+        return self
+
+    def partition_D(self, sC):
+        return R2SSmemView(self, sC)
+
+    def partition_S(self, sC):
+        return R2SSmemView(self, sC)
+
+    def retile(self, accumulators):
+        return AccumRetile(self, accumulators)
+
+
+class R2SSmemView:
+    """tRS_sD: epilogue smem tile (subscriptable to the epi buffer)."""
+
+    def __init__(self, tc, tile, stage=0):
+        self.tc = tc
+        self.tile = tile              # Tensor view over staged sC
+        self.stage = stage
+
+    @property
+    def shape(self):
+        mma = self.tc.mma
+        am, an, _ = getattr(mma.op, "shape_mnk", (16, 8, 16))
+        mm = mma.tile_mn[0] // am
+        mn = mma.tile_mn[1] // an
+        return (4, mm, mn, 1)
+
+    def __getitem__(self, idx):
+        idx = idx if isinstance(idx, tuple) else (idx,)
+        stage = [c for c in idx if c is not None]
+        return R2SSmemView(self.tc, self.tile, stage[0] if stage else 0)
+
+
+class AccumRetile:
+    """tRS_rAcc = tiled_copy_r2s.retile(accumulators): the fragment in the
+    r2s value order (== the gemm slot order by construction)."""
+
+    def __init__(self, tc, frag):
+        self.tc = tc
+        self.frag = frag
+
+    def __len__(self):
+        return self.frag.count
+
+    def __getitem__(self, i):
+        return self.frag.slots[int(i)]
+
+
+# ------------------------------------------------- smem->rmem tiled copies
+class TiledCopyAB:
+    """cute.make_tiled_copy_A/B(ldmatrix_atom, tiled_mma): smem->rmem copy
+    whose value layout matches the mma operand fragment geometry (the
+    lowering emits the trait-table ldmatrix sequence directly)."""
+
+    def __init__(self, which, atom, mma):
+        self.which = which          # 'A' | 'B'
+        self.atom = atom            # CopyAtom marker (LdMatrix8x8x16bOp)
+        self.mma = mma
+        self.tidx = None            # bound by get_slice
+
+    def get_slice(self, tidx):
+        tc = TiledCopyAB(self.which, self.atom, self.mma)
+        tc.tidx = tidx
+        # cute.copy is invoked with the ORIGINAL object in dense_gemm —
+        # remember the bound thread index on it too
+        self.tidx = tidx
+        return tc
+
+    def partition_S(self, tile):
+        return SmemCopyView(self, tile)
+
+    def retile(self, frag_view):
+        frag_view.retile_tc = self
+        return frag_view
+
+
+class SmemCopyView:
+    """tCsA_copy_view = thr_copy.partition_S(sA): staged smem operand tile.
+    [None, None, None, stage] -> stage window; [None, None, k] -> src."""
+
+    def __init__(self, tc, tile, stage=None):
+        self.tc = tc
+        self.tile = tile            # Tensor view over SmemArray (staged)
+        self.stage = stage          # int | SSA | None
+
+    def __getitem__(self, idx):
+        idx = idx if isinstance(idx, tuple) else (idx,)
+        if len(idx) == 4:
+            return SmemCopyView(self.tc, self.tile, idx[3])
+        if len(idx) == 3:
+            return SmemCopySrc(self.tc, self.tile, self.stage, idx[2])
+        raise NotImplementedError(f"copy view subscript {idx}") 
+
+class SmemCopySrc:
+    """Concrete (stage, k_block) source ready for cute.copy lowering."""
+
+    def __init__(self, tc, tile, stage, k):
+        self.tc = tc
+        self.tile = tile
+        self.stage = stage
+        self.k = k
 
 
 class PartitionedAccumulator:
+    """thr_mma.partition_C view: per-thread (4, MMA_M, MMA_N) register grid
+    (4 = f32 regs per m16n8 atom, from the mma_atoms trait geometry)."""
+
     def __init__(self, tile, mma, tidx):
         self.tile = tile
         self.mma = mma
         self.tidx = tidx
+
+    @property
+    def shape(self):
+        am, an, _ = self.mma.op.shape_mnk if hasattr(self.mma.op, "shape_mnk") \
+            else (16, 8, 16)
+        warp_m = self.mma.tile_mn[0]
+        warp_n = self.mma.tile_mn[1]
+        return (4, warp_m // am, warp_n // an)
+
+    @property
+    def count(self):
+        c = 1
+        for d in self.shape:
+            c *= int(d)
+        return c
 
 
 def make_tiled_mma(op, atom_layout=None, num_warps=None):

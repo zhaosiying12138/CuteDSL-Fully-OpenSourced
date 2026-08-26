@@ -9,7 +9,6 @@ control flow stays Python. This mirrors the official DSL's partial-evaluation
 model: Constexpr values decide Python-level branches, dynamic values decide
 device branches.
 """
-from __future__ import annotations
 
 import ast
 import textwrap
@@ -23,11 +22,14 @@ class InterpError(Exception):
     pass
 
 
-@dataclass
+from dataclasses import dataclass as _dc
+
+
+@_dc
 class KernelParam:
     name: str
     kind: str          # "constexpr" | "dynamic"
-    dtype: _DType | None
+    dtype: object = None
     default: object = None
 
 
@@ -43,15 +45,23 @@ class KernelInterpreter:
             val = arg_values.get(p.name, p.default)
             if p.kind == "constexpr":
                 self.env[p.name] = _unwrap_constexpr(val)
-            elif p.kind == "tensor" and _is_coord_meta(val):
-                # coordinate tensors are compile-time meta (no device pointer)
+            elif p.kind == "tensor" and (_is_coord_meta(val) or _is_tma_view(val)):
+                # coordinate/tma-view tensors are compile-time meta (no device
+                # pointer: data flows via the TMA descriptor param)
                 self.env[p.name] = val
                 continue
             elif p.kind == "tma":
                 mlir_ty = "!llvm.ptr"
                 self.emitter.params.append((p.name, mlir_ty))
-                self.env[p.name] = SSA(mlir_ty, dyn_idx, "tma_desc")
+                desc = SSA(mlir_ty, dyn_idx, "tma_desc")
                 dyn_idx += 1
+                # keep the host object (box/recipe meta) with the desc SSA
+                # attached: cute.copy(atom, ...) lowers through desc_ssa
+                if val is not None and not isinstance(val, (bool, int, float)):
+                    val.desc_ssa = desc
+                    self.env[p.name] = val
+                else:
+                    self.env[p.name] = desc
                 continue
             elif p.kind == "tensor":
                 from .kernel_objects import KernelTensor
@@ -76,6 +86,10 @@ class KernelInterpreter:
         self.emitter._next_id = max(dyn_idx, n_params)
 
         self.tidx_ssa = None  # recorded by cute.arch.thread_idx()
+        # non-param extras (e.g. method receiver) pre-seeded into env
+        for k, v in (arg_values or {}).items():
+            if k not in (p.name for p in params):
+                self.env[k] = v
 
         self.tree = ast.parse(textwrap.dedent(_get_source(fn)))
         self.body = self.tree.body[0].body  # FunctionDef body
@@ -140,6 +154,8 @@ class KernelInterpreter:
             self.exec_if(node)
         elif isinstance(node, ast.For):
             self.exec_for(node)
+        elif isinstance(node, ast.While):
+            self.exec_while(node)
         elif isinstance(node, (ast.Pass,)):
             pass
         elif isinstance(node, ast.Return):
@@ -150,14 +166,26 @@ class KernelInterpreter:
     def exec_if(self, node: ast.If) -> None:
         cond = self.eval(node.test)
         if isinstance(cond, SSA):
+            # region semantics: assignments inside scf.if are branch-local
+            # (no yield machinery); restore the pre-if env afterwards so
+            # sibling branches (elif chains) start from the same state
+            snapshot = dict(self.env)
+            snaps = [(v, v.__snapshot__()) for v in snapshot.values()
+                     if hasattr(type(v), "__snapshot__")]
             self.emitter.open_if(cond)
             for s in node.body:
                 self.exec_stmt(s)
             if node.orelse:
                 self.emitter.raw("} else {")
+                self.env = dict(snapshot)   # sibling branch: same entry state
+                for v, snap in snaps:
+                    v.__restore__(snap)
                 for s in node.orelse:
                     self.exec_stmt(s)
             self.emitter.close_if()  # closes the else/then block
+            self.env = snapshot
+            for v, snap in snaps:
+                v.__restore__(snap)
         else:
             # constexpr branch: evaluate in Python
             if cond:
@@ -167,11 +195,35 @@ class KernelInterpreter:
                 for s in node.orelse:
                     self.exec_stmt(s)
 
+    def exec_while(self, node: ast.While) -> None:
+        """Python while: constexpr conditions trace as (multi-)trip inline
+        loops; SSA conditions need scf.while (honest boundary for now)."""
+        cond = self.eval(node.test)
+        if not isinstance(cond, (bool, int)):
+            raise NotImplementedError(
+                "dynamic while-loop (scf.while) not yet supported; "
+                "condition must be compile-time (persistent scheduler with "
+                "grid covering all tiles traces single-trip)")
+        guard = 0
+        while bool(cond):
+            for st in node.body:
+                self.exec_stmt(st)
+            cond = self.eval(node.test)
+            guard += 1
+            if guard > 10000:
+                raise InterpError("while-loop trace guard tripped")
+
     def exec_for(self, node: ast.For) -> None:
-        # only `for x in range(...)` supported
-        assert isinstance(node.iter, ast.Call) and getattr(node.iter.func, "id", "") == "range", \
-            "only range() loops supported"
+        # `for x in range(...)` / cutlass.range_constexpr(...) supported
+        fname = ""
+        if isinstance(node.iter, ast.Call):
+            f = node.iter.func
+            fname = getattr(f, "id", None) or getattr(f, "attr", "")                 if isinstance(f, (ast.Name, ast.Attribute)) else ""
+        assert isinstance(node.iter, ast.Call) and fname in ("range", "range_constexpr"), \
+            f"only range()/range_constexpr() loops supported (got {fname!r})"
         iter_args = [self.eval(a) for a in node.iter.args]
+        if fname == "range_constexpr":
+            iter_args = [int(getattr(a, "value", a)) for a in iter_args]
         import os as _os
         if _os.environ.get("SC_TRACE"):
             print("EXEC_FOR range args:", iter_args, file=__import__("sys").stderr)
@@ -301,7 +353,17 @@ class KernelInterpreter:
                 return getattr(_b, node.id)
             raise InterpError(f"unbound name {node.id!r}")
         if isinstance(node, ast.Tuple):
-            return tuple(self.eval(e) for e in node.elts)
+            # support star-elements: (1, *t) -> flattened tuple
+            vals = []
+            for e in node.elts:
+                if isinstance(e, ast.Starred):
+                    v = self.eval(e.value)
+                    if hasattr(v, "shape") and not isinstance(v, (list, tuple)):
+                        v = tuple(v.shape)
+                    vals.extend(list(v))
+                else:
+                    vals.append(self.eval(e))
+            return tuple(vals)
         if isinstance(node, ast.List):
             return [self.eval(e) for e in node.elts]
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
@@ -432,6 +494,28 @@ class KernelInterpreter:
                                       "f16" if base.elem.name == "f16" else "f32")
             ty = "f16" if base.elem.name == "f16" else "f32"
             return self.emitter.ssa(ty, f"llvm.load {p.name} : !llvm.ptr<3> -> {ty}")
+        # meta-view objects (PartitionedMmaOperand, Tensor views, ...): defer
+        # to their own __getitem__ so host algebra stays with the object
+        if hasattr(type(base), "__getitem__") and not isinstance(base, type):
+            if isinstance(slice_node, ast.Tuple):
+                parts = []
+                for x in slice_node.elts:
+                    if isinstance(x, ast.Starred):
+                        v = self.eval(x.value)
+                        parts.extend(v if isinstance(v, (tuple, list)) else [v])
+                    elif isinstance(x, ast.Constant):
+                        parts.append(x.value)
+                    else:
+                        parts.append(self.eval(x))
+                sl = tuple(parts)
+            else:
+                sl = self.eval(slice_node)
+            if isinstance(slice_node, ast.Slice):
+                lo = self.eval(slice_node.lower) if slice_node.lower else None
+                hi = self.eval(slice_node.upper) if slice_node.upper else None
+                sl = slice(lo, hi, self.eval(slice_node.step)
+                           if slice_node.step else None)
+            return base[sl]
         raise InterpError(f"subscript on {type(base)} unsupported")
 
     def _single_dynamic_index(self, slice_node):
@@ -586,6 +670,10 @@ class _DelayedCall:
 def _explode(value, n: int) -> list:
     if isinstance(value, (tuple, list)) and len(value) == n:
         return list(value)
+    # view-like objects (TmaPartitioned pairs etc.) with iteration protocol
+    if hasattr(value, "__len__") and hasattr(value, "__getitem__") \
+            and not isinstance(value, (str, bytes)) and len(value) == n:
+        return [value[i] for i in range(n)]
     raise InterpError(f"cannot unpack {value!r} into {n} targets")
 
 
@@ -624,6 +712,12 @@ def _py_compare(op, a, b):
         ast.Eq: _op.eq, ast.NotEq: _op.ne, ast.Lt: _op.lt,
         ast.LtE: _op.le, ast.Gt: _op.gt, ast.GtE: _op.ge,
     }[type(op)](a, b)
+
+
+def _is_tma_view(v) -> bool:
+    from .cute_objects import Tensor as HostTensor
+
+    return isinstance(v, HostTensor) and getattr(v, "is_tma_view", False)
 
 
 def _is_coord_meta(v) -> bool:

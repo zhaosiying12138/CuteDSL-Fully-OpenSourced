@@ -21,9 +21,19 @@ def __getattr__(name):
     if name == 'arch':
         from self_cutedsl.frontend import builtins
         return builtins.arch
-    if name in ('nvgpu', 'runtime', 'testing', 'struct'):
+    if name in ('nvgpu', 'runtime', 'testing'):
         from importlib import import_module
         return import_module(f'cutlass.cute.{name}')
+    if name == 'struct':
+        # importing the submodule binds cutlass.cute.struct as a MODULE
+        # attribute that would shadow this namespace on later accesses —
+        # install the namespace as the explicit package attribute
+        from cutlass.cute.struct import _StructNamespace
+        import cutlass.cute as _cc
+
+        ns = _StructNamespace()
+        setattr(_cc, "struct", ns)
+        return ns
     raise AttributeError(name)
 
 
@@ -132,16 +142,68 @@ def make_copy_atom(op, element_type, **kwargs):
     return builtins.make_copy_atom(op, element_type, **kwargs)
 
 
+def shape(x):
+    return getattr(x, "shape", x)
+
+
+def make_tiled_copy_C_atom(atom, tiled_mma):
+    from self_cutedsl.frontend.cute_objects import TiledCopyCAtom
+
+    return TiledCopyCAtom(atom, tiled_mma)
+
+
+def make_tiled_copy_S(atom, tiled_copy_c):
+    from self_cutedsl.frontend.cute_objects import TiledCopyR2S
+
+    return TiledCopyR2S(atom, tiled_copy_c)
+
+
+def make_tiled_copy_A(atom, tiled_mma):
+    from self_cutedsl.frontend.cute_objects import TiledCopyAB
+
+    return TiledCopyAB("A", atom, tiled_mma)
+
+
+def make_tiled_copy_B(atom, tiled_mma):
+    from self_cutedsl.frontend.cute_objects import TiledCopyAB
+
+    return TiledCopyAB("B", atom, tiled_mma)
+
+
 def make_tiled_copy_tv(atom, thr_layout, val_layout):
     from self_cutedsl.frontend import builtins
 
     return builtins.make_tiled_copy_tv(atom, thr_layout, val_layout)
 
 
-def copy(atom, src, dst, pred=None):
+def copy(atom, src, dst, pred=None, **kw):
+    from self_cutedsl.frontend import builtins
+    from self_cutedsl.frontend.cute_objects import TiledCopyAB, TmaAtom
+
+    from self_cutedsl.frontend.cute_objects import TiledCopyR2S
+
+    if isinstance(atom, TiledCopyAB):
+        builtins.copy_tiled(atom, src, dst)
+        return
+    if isinstance(atom, TiledCopyR2S):
+        builtins.copy_r2s(atom, src, dst)
+        return
+    if isinstance(atom, TmaAtom):
+        _tma_copy(atom, src, dst, **kw)
+        return
+    builtins.copy(atom, src, dst, pred)
+
+
+def group_modes(x, i, j):
+    from self_cutedsl.frontend import cute_objects as co
+
+    return co.group_modes(x, i, j)
+
+
+def _tma_copy(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):
     from self_cutedsl.frontend import builtins
 
-    builtins.copy(atom, src, dst, pred)
+    builtins.tma_copy_partitioned(atom, src, dst, tma_bar_ptr, mcast_mask)
 
 
 def make_fragment_like(part):
@@ -175,15 +237,26 @@ def ldmatrix(smem, row_ssa, col_elems=0, num=4, trans=False):
     return builtins.ldmatrix(smem, row_ssa, col_elems, num, trans)
 
 
-def make_tiled_mma(atom, atom_layout=None):
+def make_tiled_mma(atom, atom_layout=None, permutation_mnk=None):
     from self_cutedsl.frontend import builtins
 
-    return builtins.make_tiled_mma(atom, atom_layout)
+    tm = builtins.make_tiled_mma(atom, atom_layout)
+    if permutation_mnk is not None:
+        pm = tuple(int(p) for p in permutation_mnk)
+        tm.permutation_mnk = pm
+        # the permutation defines the warp-level tile extent (e.g. the
+        # ldmatrix.x4 n-pairing doubles the n atoms per warp)
+        tm.tile_mn = (pm[0], pm[1])
+    return tm
 
 
-def gemm(tiled_mma, acc, a_frag, b_frag):
+def gemm(tiled_mma, acc, a_frag, b_frag, *rest):
     from self_cutedsl.frontend import builtins
+    from self_cutedsl.frontend.cute_objects import FragK
 
+    if isinstance(a_frag, FragK):      # 5-arg dense_gemm form
+        builtins.gemm_tv(tiled_mma, acc, a_frag, b_frag)
+        return acc
     return builtins.gemm(tiled_mma, acc, a_frag, b_frag)
 
 
@@ -348,3 +421,143 @@ def make_barrier_array(name, count):
     from self_cutedsl.frontend import builtins
 
     return builtins.make_barrier_array(name, count)
+
+
+def slice_(x, coord):
+    """cute.slice_(layout|tuple|staged, coord): select modes."""
+    from self_cutedsl.frontend.layout import CuteLayout, _flatten, _flatten_tuple
+    try:
+        from cutlass.utils import ComposedLayoutStaged
+    except Exception:
+        ComposedLayoutStaged = ()
+    from self_cutedsl.frontend.emitter import SSA as _SSA
+    if isinstance(x, _SSA):
+        raise NotImplementedError(
+            "slice_ on kernel SSA layouts requires the object-model path")
+    if isinstance(x, ComposedLayoutStaged):
+        # staged ((tile),(stage)) sliced on the TILE modes
+        shp = _flatten_tuple(x.outer.shape)
+        strd = _flatten_tuple(x.outer.stride)
+        crd = coord if isinstance(coord, (tuple, list)) else (coord,)
+        keep_s, keep_d = [], []
+        for s0, d0, c in zip(shp, strd, crd):
+            if c is None:
+                keep_s.append(s0)
+                keep_d.append(d0)
+        outer = CuteLayout(tuple(keep_s), tuple(keep_d))
+        return ComposedLayoutStaged(outer, x.stages, x.inner)
+    if isinstance(x, tuple):
+        crd = coord if isinstance(coord, (tuple, list)) else (coord,)
+        out = tuple(v for v, c in zip(x, crd) if c is None)
+        return out
+    if isinstance(x, CuteLayout):
+        shp = _flatten_tuple(x.shape)
+        strd = _flatten_tuple(x.stride)
+        crd = coord if isinstance(coord, (tuple, list)) else (coord,)
+        keep_s, keep_d = [], []
+        for s0, d0, c in zip(shp, strd, crd):
+            if c is None:
+                keep_s.append(s0)
+                keep_d.append(d0)
+        return CuteLayout(tuple(keep_s), tuple(keep_d))
+    raise TypeError(f"slice_ on {type(x)}")
+
+
+def cosize(x):
+    from self_cutedsl.frontend.layout import CuteLayout, _flatten
+    try:
+        from cutlass.utils import ComposedLayoutStaged
+    except Exception:
+        ComposedLayoutStaged = ()
+    if isinstance(x, ComposedLayoutStaged):
+        shp = _flatten(x.outer.shape)
+        n = 1
+        for d in shp:
+            n *= int(d)
+        return n * max(1, int(x.stages))   # staged cosize spans all stages
+    if isinstance(x, CuteLayout):
+        # cosize = 1 + max index over size elements (row-major flatten)
+        leaves = _flatten(x.stride)
+        shp = _flatten(x.shape)
+        n = 1
+        idx = 0
+        prod = 1
+        # simple static evaluation
+        m = 0
+        for s0, d0 in zip(shp, leaves):
+            m = max(m, d0 * (int(s0) - 1))
+        return m + 1
+    if isinstance(x, (tuple, list)):
+        from self_cutedsl.frontend.layout import _prod
+        return _prod(x)
+    return int(x)
+
+
+def size_in_bytes(dtype, layout):
+    from self_cutedsl.frontend.layout import CuteLayout, _flatten, _prod
+    from self_cutedsl.frontend.cute_objects import Layout as HostLayout
+
+    if isinstance(layout, (CuteLayout, HostLayout)):
+        n = _prod(_flatten(layout.shape))
+    elif hasattr(layout, "outer"):          # ComposedLayoutStaged per-stage
+        def _walk(t):
+            if isinstance(t, (tuple, list)):
+                r = 1
+                for d in t:
+                    r *= _walk(d)
+                return r
+            return int(t)
+
+        n = _walk(layout.outer.shape)
+    else:
+        n = 1
+    return n * int(getattr(dtype, "width", 16) // 8)
+
+
+def make_layout_image_mask(cta_layout, coord, mode):
+    """Multicast mask for the given mode at coord (host meta, cluster=1 ->
+    mask 0 in the single-CTA profile)."""
+    return 0
+
+
+def make_rmem_tensor(shape, dtype):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.make_rmem_tensor(shape, dtype)
+
+
+def local_tile(m, tiler, coord):
+    """local_tile(mA, (M,K), (None,None,None)): pad 2-mode operand metas
+    with the implicit L=1 mode so the result carries (tile..., loopM,
+    loopK/loopN, loopL) flat modes like the official profile."""
+    from self_cutedsl.frontend import cute_objects as co
+    from self_cutedsl.frontend.cute_objects import Tensor as HT, Layout
+
+    base = m if hasattr(m, "layout") else m
+    coord = tuple(coord)
+    if isinstance(base, HT):
+        lay = base.layout
+    else:
+        from self_cutedsl.frontend.kernel_objects import KernelTensor
+
+        assert isinstance(base, KernelTensor), f"local_tile on {type(base)}"
+        shp = tuple(base.shape)
+        strd = tuple(getattr(base.meta, "stride", (1,) * len(shp)) or
+                     (1,) * len(shp))
+        lay = Layout(shp, strd)
+        base = HT(None, lay, getattr(base.meta, "element_type", None))
+    flat_s = list(co._flatten(lay.shape))
+    flat_d = list(co._flatten(lay.stride))
+    if len(flat_s) == 2 and len(coord) == 3:
+        flat_s.append(1)
+        flat_d.append(flat_s[0] * flat_d[0])
+        base = HT(base.base, Layout(tuple(flat_s), tuple(flat_d)),
+                  base.element, getattr(base, "origin", None))
+    tiled = co.zipped_divide(base, tiler)
+    return co._select_rest(tiled, coord)
+
+
+def zipped_divide(m, tiler=None):
+    from self_cutedsl.frontend import cute_objects as co
+
+    return co.zipped_divide(m, tiler)

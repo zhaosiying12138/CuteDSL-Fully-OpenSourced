@@ -74,11 +74,19 @@ def matrix(l, m_or_n, k_or_m, major, dtype, gen=None):
     _torch_to_dsl = {v: k for k, v in _TORCH_OF.items()}
     tdtype = _torch_to_dsl.get(getattr(dtype, "name", dtype), _t.float16)
     l = int(l)
-    if major == "k":
+    # 'k'-major A/B (m,k) and 'n'-major C (m,n) are both row-major in the
+    # (first, second) argument order; only 'm'-major transposes
+    if major in ("k", "n"):
         shape = ((m_or_n, k_or_m) if l == 1 else (l, m_or_n, k_or_m))
-        return _t.randn(shape, dtype=tdtype)
-    shape = ((k_or_m, m_or_n) if l == 1 else (l, k_or_m, m_or_n))
-    return _t.randn(shape, dtype=tdtype).contiguous()
+        t = _t.randn(shape, dtype=tdtype)
+    else:
+        shape = ((k_or_m, m_or_n) if l == 1 else (l, k_or_m, m_or_n))
+        t = _t.randn(shape, dtype=tdtype).contiguous()
+    if l == 1:
+        t = t.unsqueeze(-1)         # (m,k,1): einsum "mkl" needs 3 dims
+    else:
+        t = t.permute(1, 2, 0)      # (l,m,k) -> (m,k,l)
+    return t
 
 
 def get_workspace_count(one_workspace_bytes, warmup, iterations):
@@ -97,10 +105,21 @@ def current_stream():
     return _t.cuda.current_stream().cuda_stream
 
 
-def cute_tensor_like(t):
+def cute_tensor_like(data_ref, cutlass_dtype=None, aligned_alloc=False,
+                     buffer_align_bytes=16):
+    """official signature: cute_tensor_like(ref, dtype, aligned, align) ->
+    (cute_tensor, torch_tensor)."""
+    import torch as _t
     from cutlass.cute.runtime import from_dlpack
 
-    return from_dlpack(torch.empty_like(getattr(t, "_torch", t)))
+    tt = _t.empty_like(data_ref, device="cuda")
+    tt.copy_(data_ref)                     # official: new CUDA tensor w/ data
+    if cutlass_dtype is not None:
+        td = _TORCH_OF.get(getattr(cutlass_dtype, "name", cutlass_dtype))
+        if td is not None and td != tt.dtype:
+            tt = tt.to(td)
+    ct = from_dlpack(tt)
+    return ct, tt
 
 
 def convert_cute_tensor(t):

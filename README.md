@@ -103,6 +103,26 @@ stack** on the RTX 5090, with reference checks enabled. "Official PASS" means
 the same source passed in the frozen official reference environment (M0
 baseline evidence in `artifacts/reference/results.json`).
 
+### Status: S5 complete — dense_gemm.py runs UNMODIFIED (2026-08-26)
+
+The flagship `blackwell_geforce/dense_gemm.py` now compiles and runs
+**unmodified** end to end on the self stack (Python trace → cute/MLIR →
+cutlass-compiler passes → PTX → Driver JIT → RTX 5090), golden-checked
+against torch einsum (`tests/python/test_dense_gemm_verbatim.py`):
+
+| Config (tile 64×64×64) | Result |
+|---|---|
+| 128×128×128 (example default, official tolerance 0.01) | ✅ PASS |
+| 128×256×128 / 256×256×128 | ✅ PASS (atol 0.05: f16 ULP at these magnitudes) |
+| 128×128×256 (4 k-tiles, double stage wrap) | ✅ PASS |
+
+Honest boundaries (general properties, not shape special-cases):
+- `tile_m=128` exceeds SMEM (the official runner skips this config too);
+- `tile_n=128` needs the multi-epi-tile r2s addressing (single-pass
+  epilogue today);
+- oversubscribed persistent grids (more tiles than CTAs) need `scf.while`
+  in the tracer — grid-covering persistent runs trace single-trip.
+
 ### Status: M0 complete — official baseline frozen (2026-08-25)
 
 | Operator | Source | Official baseline | Self stack |

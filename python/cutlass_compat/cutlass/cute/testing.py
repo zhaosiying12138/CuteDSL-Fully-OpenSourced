@@ -19,7 +19,8 @@ class JitArguments:
 
 
 def benchmark(func, workspace_generator=None, workspace_count=1,
-              warmup_iterations=2, iterations=100) -> float:
+              stream=None, warmup_iterations=2, iterations=100,
+              **kw) -> float:
     workspaces = [workspace_generator() for _ in range(workspace_count)] \
         if workspace_generator else [None]
 

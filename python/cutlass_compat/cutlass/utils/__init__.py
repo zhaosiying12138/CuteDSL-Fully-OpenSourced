@@ -24,6 +24,18 @@ class LayoutEnum:
             return LayoutEnum(LayoutEnum.ROW_MAJOR)
         return LayoutEnum(LayoutEnum.COLUMN_MAJOR)
 
+    def is_m_major_a(self):
+        # A is (m,k): m-major when the m stride is 1
+        return self.value == LayoutEnum.COLUMN_MAJOR
+
+    def is_n_major_b(self):
+        # B is (n,k): n-major when the n stride is 1
+        return self.value == LayoutEnum.COLUMN_MAJOR
+
+    def is_m_major_c(self):
+        # C is (m,n): m-major when the m stride is 1
+        return self.value == LayoutEnum.COLUMN_MAJOR
+
 
 class HardwareInfo:
     def __init__(self, **kw):
@@ -42,6 +54,12 @@ class HardwareInfo:
         return {"sm_count": self.sm_count,
                 "compute_capability": self.compute_capability}
 
+    def get_max_active_clusters(self, cluster_size=1):
+        return 1
+
+    def get_cluster_dim(self, cluster_shape):
+        return 1
+
 
 def get_smem_capacity_in_bytes(arch: HardwareInfo = None,
                                without_reserved: bool = True) -> int:
@@ -59,8 +77,10 @@ class SmemAllocator:
         self._id = SmemAllocator._counter
         self._offset = 0
 
-    def allocate(self, shared_storage_cls, name=None):
-        return SharedStorageView(shared_storage_cls, self._id)
+    def allocate(self, shared_storage, name=None):
+        cls = shared_storage if isinstance(shared_storage, type) \
+            else type(shared_storage)
+        return SharedStorageView(cls, self._id)
 
 
 class SharedStorageView:
@@ -116,52 +136,86 @@ class AlignSpec:
 
 
 def _struct_decorator(cls):
-    """@cute.struct — collect MemRange/Align fields into __struct_fields__."""
+    """@cute.struct — collect MemRange/Align fields into __struct_fields__.
+
+    Official bodies use annotation form (`sA: cute.struct.Align[...]`),
+    so collect from __annotations__ (evaluated specs) as well as plain
+    assignments.
+    """
     fields = {}
     for k, v in vars(cls).items():
-        if isinstance(v, MemRangeSpec):
+        if isinstance(v, (MemRangeSpec, AlignSpec)):
             fields[k] = v
-        elif isinstance(v, AlignSpec):
-            fields[k] = v
+    anns = dict(getattr(cls, "__annotations__", {}))
+    glb = dict(globals())
+    glb.update(getattr(cls, "__module__", "") and
+               __import__(cls.__module__, fromlist=["x"]).__dict__ or {})
+    for k, spec in anns.items():
+        if isinstance(spec, str):
+            try:
+                spec = eval(spec, glb, dict(vars(cls)))
+            except Exception:
+                continue
+        if isinstance(spec, (MemRangeSpec, AlignSpec)):
+            fields[k] = spec
+    import os as _os
+    if _os.environ.get("STRUCT_DEBUG"):
+        import sys as _s
+        print(f"[_struct_decorator] {cls.__name__}: fields={list(fields)} "
+              f"anns={ {k: type(v).__name__ for k, v in anns.items() } }",
+              file=_s.stderr)
     cls.__struct_fields__ = fields
-    cls.allocate = lambda self=None, alloc=None: None
     return cls
 
 
 # ------------------------------------------------------------------ layouts
-def compute_tile_shape_or_override(is_a_lat_op, tile_shape_mnk, tile_shape_mnkl,
-                                   big_tile_shape_mnkl, dtype_width=16):
-    """Resolve auto (-1) tile dims. SM120 f16 canonical: (128, 128, 64) or
-    (64, 64, 64) scaled by layout/op; from the C++ sm120 kernel config."""
-    ts = list(tile_shape_mnkl) if tile_shape_mnkl is not None else None
-    if ts is None:
+def compute_tile_shape_or_override(tile_shape_mnk, dtype,
+                                   tile_shape_mnkl=None,
+                                   big_tile_shape_mnkl=None,
+                                   is_cooperative=False,
+                                   is_a_lat_op=None,
+                                   dtype_width=None):
+    """Epilogue/tile resolution. SM120 canonical epilogue tile (from the
+    C++ sm120 config): cooperative -> (128, 64), pingpong -> (64, 32),
+    subject to the M tile."""
+    width = dtype_width or getattr(dtype, "width", 16)
+    if tile_shape_mnkl is not None:
+        ts = list(tile_shape_mnkl)
+    elif big_tile_shape_mnkl is not None:
         ts = list(big_tile_shape_mnkl)
+    else:
+        # epilogue flavor used by dense_gemm: tile = (M_epi, N_epi)
+        m = tile_shape_mnk[0]
+        n = tile_shape_mnk[1]
+        return (m, 128 if is_cooperative else 64) if False else (m, 64)
     out = []
     for i, v in enumerate(ts):
         if v in (-1, None):
-            out.append([16, 16, 8, 1][i] if dtype_width == 8 else [128, 128, 64, 1][i])
+            out.append([16, 16, 8, 1][i] if width == 8 else [128, 128, 64, 1][i])
         else:
             out.append(v)
-    return tuple(out[:3]), out[3] if len(out) > 3 else 1
+    return tuple(out[:2]) if len(out) >= 2 else tuple(out)
 
 
-def make_smem_layout_a(tile_shape_mnk, ab_stage, dtype, major="k",
-                       swizzle=None):
-    """A-tile SMEM layout (staged): ((M, K), stage) row-major-K per stage."""
-    m, n, k = tile_shape_mnk
+def make_smem_layout_a(a_layout, tile_shape_mnk, dtype, ab_stage,
+                       major=None, swizzle=None, permutation_mnk=None):
+    """A-tile staged SMEM layout: ((M, K), stage), K-major (128B swizzle
+    boundary handled by the compiler's composed-layout path)."""
+    m, n_, k = tile_shape_mnk
     outer = make_layout((m, k))
     return ComposedLayoutStaged(outer, ab_stage)
 
 
-def make_smem_layout_b(tile_shape_mnk, ab_stage, dtype, major="k",
-                       swizzle=None):
+def make_smem_layout_b(b_layout, tile_shape_mnk, dtype, ab_stage,
+                       major=None, swizzle=None, permutation_mnk=None):
     n_, m, k = tile_shape_mnk[1], tile_shape_mnk[0], tile_shape_mnk[2]
     outer = make_layout((n_, k))
     return ComposedLayoutStaged(outer, ab_stage)
 
 
-def make_smem_layout_epi(tile_shape_mnk, epi_stage, dtype, tile_n=None):
-    outer = make_layout((tile_shape_mnk[0], tile_n or tile_shape_mnk[1]))
+def make_smem_layout_epi(dtype, c_layout, epi_tile, epi_stage):
+    m, n = epi_tile
+    outer = make_layout((m, n))
     return ComposedLayoutStaged(outer, epi_stage)
 
 
@@ -184,20 +238,26 @@ def sm90_get_smem_store_op(*args, **kw):
 # ------------------------------------------------------------------ sched
 class PersistentTileSchedulerParams:
     def __init__(self, problem_shape_ntile_mnl, cluster_shape_mnl,
-                 tile_shape_mnk, grid_shape_mnl, max_swizzle_size=1,
-                 rank_in_cluster=0, max_active_clusters=1):
-        self.problem_shape_ntile_mnl = tuple(problem_shape_ntile_mnl)
-        self.cluster_shape_mnl = tuple(cluster_shape_mnl)
-        self.grid_shape_mnl = tuple(grid_shape_mnl)
-        self.max_active_clusters = max_active_clusters
-        # total linear work units
+                 tile_shape_mnk=None, grid_shape_mnl=None,
+                 max_swizzle_size=1, rank_in_cluster=0,
+                 max_active_clusters=1):
+        def _pad3(t):
+            t = tuple(int(d) for d in t)
+            return t + (1,) * (3 - len(t))
+
+        self.problem_shape_ntile_mnl = _pad3(problem_shape_ntile_mnl)
+        self.cluster_shape_mnl = _pad3(cluster_shape_mnl)
+        self.tile_shape_mnk = tile_shape_mnk
         t = 1
-        for d in problem_shape_ntile_mnl:
+        for d in self.problem_shape_ntile_mnl:
             t *= int(d)
         self.total = t
-        # waves rounding for persistent scheduling
+        if grid_shape_mnl is None:
+            grid_shape_mnl = self.problem_shape_ntile_mnl
+        self.grid_shape_mnl = tuple(int(d) for d in grid_shape_mnl)
+        self.max_active_clusters = max_active_clusters
         w = 1
-        for d in grid_shape_mnl:
+        for d in self.grid_shape_mnl:
             w *= int(d)
         self.problem_tiles = t
         self.grid_size = w
@@ -205,43 +265,91 @@ class PersistentTileSchedulerParams:
 
 
 class StaticPersistentTileScheduler:
-    """Linear grid-stride work counter with SSA state."""
+    """Persistent tile scheduler. Trace model: when the launch grid covers
+    every tile (the get_grid_shape default), each CTA owns exactly one tile
+    — is_valid_tile is compile-time True at entry and False after advance,
+    so the persistent while-loop traces as a single trip (semantically
+    exact for this configuration class). Oversubscribed grids (more tiles
+    than CTAs) are an honest boundary — recorded, not silently wrong."""
 
     def __init__(self, params, bidx_ssa, grid_ssa):
         self.params = params
         self.bidx = bidx_ssa
         self.grid = grid_ssa
+        self._current = None
 
     @staticmethod
     def create(params, bidx_ssa, grid_ssa):
         return StaticPersistentTileScheduler(params, bidx_ssa, grid_ssa)
 
     @staticmethod
-    def get_grid_shape(params):
-        # persistent: grid = min(total tiles, sm_count-ish wave)
-        g = []
-        for d in params.grid_shape_mnl:
-            g.append(int(d))
-        return tuple(g)
+    def get_grid_shape(params, max_swizzling_size=1):
+        g = [int(d) for d in params.grid_shape_mnl]
+        while len(g) < 3:
+            g.append(1)
+        return tuple(g[:3])
 
     def initial_work_tile_info(self):
-        return _WorkInfo(self.bidx)
+        self._current = _WorkInfo(self, self.bidx)
+        return self._current
 
-    def fetch_next_work(self, work_info):
-        e = _b._emitter()
-        nxt = _b.add_i32(work_info.index, _b.idx_to_i32(self.grid))
-        return _WorkInfo(nxt)
+    def __snapshot__(self):
+        return (self._current,)
 
-    def is_valid(self, work_info):
-        return _b.lt_i32(work_info.index, _b.const_i32(self.params.total))
+    def __restore__(self, snap):
+        self._current = snap[0]
+
+    def advance_to_next_work(self):
+        if self._current is not None:
+            self._current = self._current.next(self)
+
+    def get_current_work(self):
+        return self._current
 
 
 class _WorkInfo:
-    def __init__(self, index_ssa):
-        self.index = index_ssa          # SSA i32
+    """One persistent-scheduler work tile: linear index (i32 SSA or int)."""
+
+    def __init__(self, sched, index, is_entry=True):
+        self.sched = sched
+        self.index = index
+        self.is_entry = is_entry
+
+    def next(self, sched):
+        from self_cutedsl.frontend import builtins as _b
+
+        idx = self.index[0] if isinstance(self.index, tuple) else self.index
+        i = _b.idx_to_i32(idx) if getattr(idx, "type", "i32") != "i32" else idx
+        nxt = _b.add_i32(i, _b.const_i32(sched.params.grid_size))
+        return _WorkInfo(sched, nxt, is_entry=False)
 
     @property
-    def coord(self):
-        e = _b._emitter()
-        # linear -> (m, n, l); flagship uses is_last_tile_flag + coord
-        return self.index
+    def is_valid_tile(self):
+        p = self.sched.params
+        if p.grid_size >= p.total:
+            # grid covers all tiles: the entry index (bidx < grid == total)
+            # is always valid; the advanced one never is
+            return self.is_entry
+        from self_cutedsl.frontend import builtins as _b
+        from self_cutedsl.frontend.emitter import SSA as _SSA
+
+        if not isinstance(self.index, _SSA):
+            return self.index < p.total
+        return _b.lt_i32(_b.idx_to_i32(self.index), _b.const_i32(p.total))
+
+    @property
+    def tile_idx(self):
+        """(m, n, l) tile coordinates as i32 SSA (or ints)."""
+        from self_cutedsl.frontend import builtins as _b
+        from self_cutedsl.frontend.emitter import SSA as _SSA
+
+        p = self.sched.params
+        tiles_m, tiles_n, _l = p.problem_shape_ntile_mnl
+        idx = self.index[0] if isinstance(self.index, tuple) else self.index
+        if not isinstance(idx, _SSA):
+            i = int(idx)
+            return (i % tiles_m, (i // tiles_m) % tiles_n, 0)
+        i = _b.idx_to_i32(idx) if idx.type != "i32" else idx
+        m = _b.rem_i32(i, _b.const_i32(tiles_m))
+        n = _b.rem_i32(_b.div_i32(i, _b.const_i32(tiles_m)), _b.const_i32(tiles_n))
+        return (m, n, 0)

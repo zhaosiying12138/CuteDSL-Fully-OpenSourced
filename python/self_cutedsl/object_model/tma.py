@@ -14,6 +14,7 @@ from ..frontend import builtins as _b
 def tma_issue(smem_window, tma_desc_ssa, bar_ssa, coords):
     """cp.async.bulk.tensor G2S with dynamic coords (inner-first)."""
     e = _b._emitter()
+    tma_desc_ssa = getattr(tma_desc_ssa, "desc_ssa", tma_desc_ssa)
     smem_ptr = getattr(smem_window, "ptr", smem_window)
     off = getattr(smem_window, "stage_offset", None)
     if off is not None:
@@ -46,6 +47,7 @@ def tma_issue_multicast(smem_window, tma_desc_ssa, bar_ssa, coords, mask_ssa):
 def tma_store_issue(tma_desc_ssa, smem_window, coords):
     """S2G with dynamic coords + bulk-group commit/wait."""
     e = _b._emitter()
+    tma_desc_ssa = getattr(tma_desc_ssa, "desc_ssa", tma_desc_ssa)
     smem_ptr = getattr(smem_window, "ptr", smem_window)
     e.fence_proxy_async_shared()
     e.tma_store(tma_desc_ssa, smem_ptr, list(coords))

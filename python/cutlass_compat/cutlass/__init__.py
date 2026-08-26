@@ -33,3 +33,9 @@ from .cuda import initialize_cuda_context  # noqa: F401
 __self_cutedsl__ = True
 
 __version__ = "0.1.0+compat"
+
+
+def const_expr(cond):
+    """cutlass.const_expr(cond) — trace-time conditional; the condition is
+    a python bool at trace time (official partial evaluation)."""
+    return bool(cond)
