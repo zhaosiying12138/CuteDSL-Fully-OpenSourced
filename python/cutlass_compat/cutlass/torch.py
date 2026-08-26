@@ -213,14 +213,19 @@ class RandomInitConfig:
 
 def create_and_permute_torch_tensor(shape, dtype, permute_order=(0,),
                                     init_type=None, init_config=None):
-    """torch tensor of shape, permuted, optionally randomized on [lo, hi]."""
+    """Create a tensor with the official RANDOM integer-value semantics.
+
+    CUTLASS initializes an int32 tensor with ``random_(min, max)`` and then
+    converts it to the requested dtype; ``max`` is exclusive.  Using a
+    continuous uniform distribution here made the block-scale reference hold
+    unquantized values while the device tensor held E4M3-rounded values.
+    """
     import torch as _t
 
     if init_type == TensorInitType.RANDOM or init_config is not None:
         lo = getattr(init_config, "min_val", 0.0)
         hi = getattr(init_config, "max_val", 1.0)
-        t = lo + (hi - lo) * _t.rand(tuple(shape), dtype=_t.float32)
-        t = t.to(dtype)
+        t = _t.randint(int(lo), int(hi), tuple(shape), dtype=_t.int32).to(dtype)
     else:
         t = _t.zeros(tuple(shape), dtype=dtype)
     return t.permute(*permute_order)
