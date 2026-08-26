@@ -128,6 +128,8 @@ baseline evidence in `artifacts/reference/results.json`).
 | CuTe object model: make_tiled_tma_atom / tma_partition / make_tiled_mma call shapes, multi-warp TMA GEMM golden (K 64/128/256) | `tests/python/test_tma_gemm_objects.py` |
 | Multi-CTA local-tile TMA GEMM (per-CTA A-row/B-col windows) golden | `tests/python/test_local_tile_kernel.py` |
 | 2-stage pipelined multi-CTA TMA GEMM (staged SMEM, parity rollover) golden | `tests/python/test_tma_pipeline_gemm.py` |
+| Wide-N (64-col) 8-warp pipelined TMA GEMM golden | `tests/python/test_tma_gemm_wide_n.py` |
+| **Persistent full-matrix TMA GEMM with TMA S2G epilogue — 9 configs, 31 TFLOP/s (72% of official)** | `tests/python/test_persistent_gemm.py` |
 | PTX fingerprints: ld.global.v4, ldmatrix, mma.sync.aligned.m16n8k16, cp.async.bulk.tensor, mbarrier.* | test asserts |
 
 ### Flagship status (dense_gemm / blockscaled)
@@ -136,10 +138,14 @@ baseline evidence in `artifacts/reference/results.json`).
 verified; the remaining gap is the CuTe object-model library layer
 (dynamic layout algebra in-kernel, TMA atoms/partitioning, TiledMma
 partitioning, PipelineTmaAsync driver, tile scheduler). Full inventory:
-`compat/sm120_flagship_gap.md`. Self GEMM perf: warp-GEMM 1156 GFLOP/s (512³); pipelined TMA GEMM
-(2-stage, correctness-first narrow-N tile) 26.6–53.5 GFLOP/s useful —
-remaining gap drivers: N-atom tiling, multi-warp, deeper stages, warp
-specialization (each an additive step on the verified skeleton).
+`compat/sm120_flagship_gap.md`. Self GEMM perf trajectory: 53.5 (narrow-N pipeline) → 1,361 (wide-N
+8-warp) → **30,972 GFLOP/s (persistent, full-matrix, 72% of official
+dense_gemm)** — remaining gap drivers: warp specialization (producer
+warps), deeper stages, 128-wide tiles, TMA multicast.
+
+Two PTX memory-model races root-caused on the way (missing
+fence.proxy.async before TMA S2G; multi-thread mbarrier.init UB) —
+details in compat/sm120_flagship_gap.md and git history.
 
 Toolchain frozen in `compat/sm120_toolchain.lock.yaml`: pinned LLVM `23a60f15`
 (5193/5193 targets), cutlass_compiler @ `7107b055` with **check-cute 236/236
