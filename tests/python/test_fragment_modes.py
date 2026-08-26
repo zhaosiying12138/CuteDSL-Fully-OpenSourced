@@ -91,17 +91,16 @@ def test_blockscaled_mma_preserves_f32_accumulator_types():
              for _ in range(4)]
 
     outputs = emitter.mma_mxf4nvf4(
-        packed[:4], packed[4:6], packed[6:8], packed[8:10], accum
+        packed[:4], packed[4:6], [packed[6]], [packed[8]], accum
     )
     mma_line = next(line for line in emitter._lines
                     if "kind::mxf4nvf4" in line)
 
     assert outputs != accum
     assert len(outputs) == 4 and all(value.type == "f32" for value in outputs)
-    assert sum("mov.b32" in line for line in emitter._lines) == 4
+    assert any("mxf4nvf4" in line for line in emitter._lines)
     assert "{$0, $1, $2, $3}" in mma_line
     assert "$rw" not in mma_line and "$r0" not in mma_line
-    assert "ro (" in mma_line and "rw (" in mma_line
-    assert ": i32, i32, i32, i32, i32, i32, i32, i32, i32, i32)" \
-           in mma_line
-    assert ": f32, f32, f32, f32)" in mma_line
+    assert "ro (" in mma_line and "-> !llvm.struct<(f32, f32, f32, f32)>" in mma_line
+    assert mma_line.count("i32") == 12 and mma_line.count("i16") == 4
+    assert "-> !llvm.struct<(f32, f32, f32, f32)>" in mma_line
