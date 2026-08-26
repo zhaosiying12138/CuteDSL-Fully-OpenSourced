@@ -174,6 +174,10 @@ def copy(atom, src, dst, pred=None):
     from .kernel_objects import Fragment, ThrPartition
 
     e = _emitter()
+    _t = type(atom).__name__
+    if _t == "_SF_copy":                 # SF smem->rmem (blockscaled)
+        copy_sf(atom, src, dst)
+        return
     if isinstance(src, ThrPartition) and isinstance(dst, Fragment):
         _copy_g2r(e, src, dst, pred)
     elif isinstance(src, Fragment) and isinstance(dst, ThrPartition):
@@ -584,6 +588,9 @@ def copy_tiled(tc, src, dst):
     am, an, ak = getattr(mma.op, "shape_mnk", (16, 8, 16))
     warps_m = int(_flatten(mma.atom_layout)[0]) if mma.atom_layout else 1
     warp_m, warp_n = mma.tile_mn
+    if ak >= 64:                        # SM120 block-scaled warp grid
+        warp_m, warp_n = 32, 64
+        warps_m = 4
     mm = warp_m // am
     mn = warp_n // an
     row_str = _ix(e, flat_str[0])      # stride of the non-contiguous dim
@@ -641,6 +648,10 @@ def gemm_tv(mma, acc, a_k, b_k):
     assert isinstance(a_k, FragK) and isinstance(b_k, FragK)
     aregs = a_k.frag.slots[a_k.k]
     bregs = b_k.frag.slots[b_k.k]
+    import sys as _s
+    print(f"DBG gemm_bs: aregs={len(aregs)} bregs={len(bregs)} "
+          f"sfa={len(sfa) if sfa else 0} sfb={len(sfb) if sfb else 0} "
+          f"mm={mm} mn={mn} acc={acc.count}", file=_s.stderr)
     am, an, _ = getattr(mma.op, "shape_mnk", (16, 8, 16))
     warp_m, warp_n = mma.tile_mn
     mm, mn = warp_m // am, warp_n // an
@@ -739,6 +750,122 @@ def frag_to(view, dtype):
     from .kernel_objects import FragmentView
 
     return FragmentView(out)
+
+
+def copy_sf(tc, src, dst):
+    """SF smem->rmem: each thread loads its e4m3 scale bytes for the
+    current k-block. First-guess slot mapping (calibrate vs PTX):
+    SFA reg j of m-atom i covers rows {base+i*16+(lane//4), +8} at
+    k-groups {kb*4 + 2j, 2j+1} packed 2 bytes/reg (nvfp4 sf_vec 16)."""
+    from .cute_objects import Tensor as HT, _flatten
+
+    e = _emitter()
+    view = src if hasattr(src, "tile") else dst   # src side carries the tile
+    tile = view.tile
+    arr = tile.base                     # SmemArray (e4m3 bytes)
+    lay = tile.layout
+    rows = int(_flatten(lay.shape)[0])  # tile_m (SFA) / tile_n (SFB)
+    kgs = int(_flatten(lay.shape)[1])   # tile_k / sf_vec
+    kb = int(getattr(view, "k", 0) or 0)
+    stage = getattr(view, "stage", 0)
+
+    tidx = _ix(e, tc.tidx)
+    lane = _ixop(e, "arith.remsi", tidx, _ix(e, 32))
+    wid = _ixop(e, "arith.divsi", tidx, _ix(e, 32))
+    warps_m = 4
+    warp_m, warp_n = 32, 64
+    wm = _ixop(e, "arith.remsi", wid, _ix(e, warps_m))
+    wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
+
+    # side from sequence parity (SFA copied before SFB at each k-block)
+    global _SF_SEQ, _SF_KB
+    if int(kb) != _SF_KB:
+        _SF_KB = int(kb)
+        _SF_SEQ = 0
+    is_a = _SF_SEQ % 2 == 0
+    which = "A" if is_a else "B"
+    # A side: regs per m-atom (rows), B side: regs per n-atom (cols)
+    m_atoms = (warp_m // 16) if is_a else (warp_n // 8)
+    lane_off = (lambda x: x) if is_a else (lambda x: x)
+    group = _ixop(e, "arith.divsi", lane, _ix(e, 4))    # lane//4
+    r8 = _ix(e, 8)
+    row_str = _ix(e, kgs)                # (m, k_sf) row-major
+    regs = []
+    for i in range(m_atoms):
+        base = _ixop(e, "arith.addi",
+                     _ixop(e, "arith.muli", wm, _ix(e, warp_m)),
+                     _ix(e, i * 16))
+        for j in range(2):
+            # reg j: rows {r, r+8} at k-group pair — byte pack (r,kg2j),(r+8,kg2j)
+            kg = int(kb) * 4 + 2 * j
+            r0 = _ixop(e, "arith.addi", base, group)
+            r1 = _ixop(e, "arith.addi", r0, r8)
+            o0 = _ixop(e, "arith.addi",
+                        _ixop(e, "arith.muli", r0, row_str), _ix(e, kg))
+            o1 = _ixop(e, "arith.addi",
+                        _ixop(e, "arith.muli", r1, row_str), _ix(e, kg + 1))
+            b0 = _load_u8(e, arr, o0)
+            b1 = _load_u8(e, arr, o1)
+            regs.append(_pack_bytes(e, b0, b1))
+    _SF_SEQ += 1
+    _SF_SLOTS.setdefault(which, {})[int(kb)] = regs
+
+
+_SF_SLOTS: dict = {}
+_SF_SEQ = 0
+_SF_KB = -1
+
+
+def _load_u8(e, arr, off):
+    p = e.gep_smem(arr.ptr, off, "i8")
+    return e.ssa("i8", f"llvm.load {p.name} : !llvm.ptr<3> -> i8")
+
+
+def _pack_bytes(e, lo, hi):
+    lo32 = e.ssa("i32", f"llvm.zext {lo.name} : i8 to i32")
+    hi32 = e.ssa("i32", f"llvm.zext {hi.name} : i8 to i32")
+    h = e.ssa("i32", f"llvm.shl {hi32.name}, "
+                     f"arith.constant 8 : i32 : i32")
+    return e.ssa("i32", f"llvm.or {lo32.name}, {h.name} : i32")
+
+
+def gemm_bs(mma, acc, a_list, b_list):
+    """cute.gemm(mma, acc, [tCrA[k], tCrSFA[k]], [tCrB[k], tCrSFB[k]], acc)
+    — block-scaled: kind::mxf4nvf4 per (m_atom, n_atom) over the warp grid.
+    First-guess register mapping (calibrate vs PTX): A regs from the fp4
+    ldmatrix path, SF bytes from copy_sf slots."""
+    e = _emitter()
+    a_k, sfa_v = a_list
+    b_k, sfb_v = b_list
+    aregs = a_k.frag.slots[a_k.k]
+    bregs = b_k.frag.slots[b_k.k]
+    kb = int(getattr(sfa_v, "k", a_k.k) or 0)
+    sfa = _SF_SLOTS.get("A", {}).get(kb) or []
+    sfb = _SF_SLOTS.get("B", {}).get(kb) or []
+    mma_op = getattr(mma, "op", None)
+    atom = getattr(mma_op, "shape_mnk", (16, 8, 64))
+    # SM120 blockscaled warp grid: atom_layout (4,2,1) over tile (128,128)
+    # -> warp tile (32, 64); keep in lockstep with copy_sf
+    warp_m, warp_n = 32, 64
+    mm, mn = warp_m // atom[0], warp_n // atom[1]
+    zero32 = None
+    for i in range(mm):
+        for na in range(mn):
+            c0 = (i * mn + na) * 4
+            c4 = [acc.slots.get(c0 + j) for j in range(4)]
+            if zero32 is None:
+                zero32 = e.ssa("i32", "arith.constant 0 : i32")
+            a4 = [aregs[i * 4 + j] if i * 4 + j < len(aregs) else zero32
+                  for j in range(4)]
+            b2 = [bregs[na * 2 + j] if na * 2 + j < len(bregs) else zero32
+                  for j in range(2)]
+            sa2 = [sfa[i * 2 + j] if i * 2 + j < len(sfa) else zero32
+                   for j in range(2)]
+            sb2 = [sfb[na * 2 + j] if na * 2 + j < len(sfb) else zero32
+                   for j in range(2)]
+            r = e.mma_mxf4nvf4(a4, b2, sa2, sb2, c4)
+            for j in range(4):
+                acc.slots[c0 + j] = r[j]
 
 
 def tma_partition(atom, cta_coord, cta_layout, smem_grouped, gmem_grouped):

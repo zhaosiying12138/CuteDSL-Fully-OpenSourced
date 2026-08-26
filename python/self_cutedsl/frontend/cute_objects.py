@@ -400,6 +400,11 @@ class TmaGmemView:
         self.tiles = tuple(tile_sizes)  # per-dim tile extent in elements
         self.offs = {}                  # dim -> SSA/int (tile units)
 
+    @property
+    def shape(self):
+        # ((atom), (rest)) descriptor profile for epilogue tiling queries
+        return (self.tiles, (1, 1))
+
     def __getitem__(self, idx):
         idx = idx if isinstance(idx, tuple) else (idx,)
         if len(idx) == len(self.dims) + 1:
@@ -675,7 +680,9 @@ class AccumRetile:
         return self.frag.count
 
     def __getitem__(self, i):
-        return self.frag.slots[int(i)]
+        if isinstance(i, (tuple, list)):
+            i = next((c for c in i if c is not None), 0)
+        return self.frag.slots[int(getattr(i, "value", i))]
 
 
 # ------------------------------------------------- smem->rmem tiled copies

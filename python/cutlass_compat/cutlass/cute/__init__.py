@@ -226,6 +226,9 @@ def copy(atom, src, dst, pred=None, **kw):
 
     from self_cutedsl.frontend.cute_objects import TiledCopyR2S
 
+    if type(atom).__name__ == "_SF_copy":
+        builtins.copy_sf(atom, src, dst)
+        return
     if isinstance(atom, TiledCopyAB):
         builtins.copy_tiled(atom, src, dst)
         return
@@ -431,6 +434,9 @@ def gemm(tiled_mma, acc, a_frag, b_frag, *rest):
     from self_cutedsl.frontend import builtins
     from self_cutedsl.frontend.cute_objects import FragK
 
+    if isinstance(a_frag, (list, tuple)):   # block-scaled [data, SF] form
+        builtins.gemm_bs(tiled_mma, acc, a_frag, b_frag)
+        return acc
     if isinstance(a_frag, FragK):      # 5-arg dense_gemm form
         builtins.gemm_tv(tiled_mma, acc, a_frag, b_frag)
         return acc

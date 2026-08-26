@@ -62,3 +62,7 @@ class _SFragView:
 
 def sm90_get_smem_store_op(*args, **kw):
     return ("stmatrix", "f16")
+
+
+def sm120_get_smem_store_op(*args, **kw):
+    return ("stmatrix", "f16")

@@ -475,7 +475,10 @@ class KernelInterpreter:
 
             return _b._coord_value(self.emitter, base, j)
         if isinstance(base, Fragment):
-            return base.slots.get(int(_const_index(self.eval(slice_node))))
+            v = self.eval(slice_node)
+            if isinstance(v, (tuple, list)):
+                v = next((c for c in v if c is not None), 0)
+            return base.slots.get(int(_const_index(v)))
         if isinstance(base, SSA):
             return self._load_elem(base, self.eval(slice_node))
         if isinstance(base, (list, tuple)):
@@ -487,7 +490,10 @@ class KernelInterpreter:
                 return base[(lo if lo is None else int(_const_index(lo))):
                             (hi if hi is None else int(_const_index(hi))):
                             (st if st is None else int(_const_index(st)))]
-            return base[int(_const_index(self.eval(sl)))]
+            v = self.eval(sl)
+            if isinstance(v, (tuple, list)):        # (None,..,k) coords
+                v = next((c for c in v if c is not None), 0)
+            return base[int(_const_index(v))]
         from . import builtins as _bb
 
         if isinstance(base, _bb.SmemArray):
@@ -734,9 +740,15 @@ def _is_coord_meta(v) -> bool:
 
 
 def _const_index(v) -> int:
-    """constexpr index (python int or Constexpr-wrapped)."""
+    """constexpr index (python int or Constexpr-wrapped); hierarchical
+    tuple coords flatten to their linear index over (4,2)-style grids."""
     if isinstance(v, SSA):
         raise InterpError("value index must be compile-time constant")
+    if isinstance(v, (tuple, list)):
+        i = 0
+        for c in v:
+            i = i * 2 + int(getattr(c, "value", c))
+        return i
     return int(getattr(v, "value", v))
 
 

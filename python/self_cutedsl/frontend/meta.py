@@ -267,6 +267,10 @@ def cute_size(x, mode=None) -> int:
             k = mode[0] if isinstance(mode, (list, tuple)) else mode
             return _prod(x.shape[k])
         return _prod(x.shape)
+    if x is None:
+        return 1
+    if hasattr(x, "__len__") and not isinstance(x, (str, bytes)):
+        return len(x)
     if isinstance(x, (int, tuple)):
         return _prod(x)
     raise TypeError(f"cute.size on {type(x)}")

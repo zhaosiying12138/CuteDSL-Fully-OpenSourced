@@ -228,6 +228,21 @@ class KernelEmitter:
                        f"llvm.extractvalue {r.name}[{i}] : !llvm.struct<(f32, f32, f32, f32)>"))
         return outs
 
+    def mma_mxf4nvf4(self, a, b, sfa, sfb, c):
+        """mma.sync.aligned.m16n8k64.row.col.kind::mxf4nvf4.f32.f4.f4.f32
+        via inline PTX (nvvm op unavailable); 4/2/2/2/4 i32 regs."""
+        ops = ", ".join(x.name for x in (a + b + sfa + sfb + c))
+        ty = ", ".join(["i32"] * len(a + b + sfa + sfb + c))
+        r = self.ssa("!llvm.struct<(f32, f32, f32, f32)>",
+                     f'nvvm.inline_ptx "mma.sync.aligned.m16n8k64.row.col'
+                     f'.kind::mxf4nvf4.f32.f4.f4.f32 '
+                     f'{{$0, $1, $2, $3}}, {{$4, $5, $6, $7}}, {{$8, $9}}, '
+                     f'{{$10, $11}}, {{$12, $13}}, {{$14, $15, $16, $17}};" '
+                     f'rw ({ops} : {ty}) -> !llvm.struct<(f32, f32, f32, f32)>')
+        return [self.ssa("f32",
+                f"llvm.extractvalue {r.name}[{i}] : "
+                f"!llvm.struct<(f32, f32, f32, f32)>") for i in range(4)]
+
     def extract_i32(self, struct: SSA, idx: int) -> SSA:
         n = _struct_len(struct.type)
         inner = ", ".join(["i32"] * n)
