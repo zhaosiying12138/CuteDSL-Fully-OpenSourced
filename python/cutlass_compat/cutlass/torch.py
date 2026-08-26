@@ -106,7 +106,8 @@ def current_stream():
 
 
 def cute_tensor_like(data_ref, cutlass_dtype=None, aligned_alloc=False,
-                     buffer_align_bytes=16):
+                     buffer_align_bytes=16, is_dynamic_layout=False,
+                     assumed_align=None, **kw):
     """official signature: cute_tensor_like(ref, dtype, aligned, align) ->
     (cute_tensor, torch_tensor)."""
     import torch as _t
@@ -122,5 +123,40 @@ def cute_tensor_like(data_ref, cutlass_dtype=None, aligned_alloc=False,
     return ct, tt
 
 
-def convert_cute_tensor(t):
-    return getattr(t, "_torch", t)
+def convert_cute_tensor(src, dst=None, dtype=None, is_dynamic_layout=False,
+                        **kw):
+    """Elementwise convert src cute/torch tensor into dst (or dtype)."""
+    import torch as _t
+
+    if dst is None:
+        return getattr(src, "_torch", src)
+    st = getattr(src, "_torch", src)
+    dt = getattr(dst, "_torch", dst)
+    dt.copy_(st)
+    return dst
+
+
+class TensorInitType:
+    RANDOM = "random"
+    SPECIAL = "special"
+
+
+class RandomInitConfig:
+    def __init__(self, min_val=0.0, max_val=1.0):
+        self.min_val = min_val
+        self.max_val = max_val
+
+
+def create_and_permute_torch_tensor(shape, dtype, permute_order=(0,),
+                                    init_type=None, init_config=None):
+    """torch tensor of shape, permuted, optionally randomized on [lo, hi]."""
+    import torch as _t
+
+    if init_type == TensorInitType.RANDOM or init_config is not None:
+        lo = getattr(init_config, "min_val", 0.0)
+        hi = getattr(init_config, "max_val", 1.0)
+        t = lo + (hi - lo) * _t.rand(tuple(shape), dtype=_t.float32)
+        t = t.to(dtype)
+    else:
+        t = _t.zeros(tuple(shape), dtype=dtype)
+    return t.permute(*permute_order)

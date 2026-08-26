@@ -50,6 +50,20 @@ class TensorMeta:
     def mark_layout_dynamic(self) -> "TensorMeta":
         return self  # layout dynamism is a specialization hint; same meta here
 
+    def mark_compact_shape_dynamic(self, *a, **kw):
+        return self
+
+    def mark_dynamic(self, *a, **kw):
+        return self
+
+    def cuda(self):
+        """Host convenience: this meta already wraps a CUDA tensor."""
+        return self
+
+    def cpu(self):
+        from .meta import make_tensor_meta
+        return make_tensor_meta(self._torch.cpu())
+
     @property
     def type(self) -> str:
         return (f"cutlass.Tensor(element={self.element_type.name}, "
