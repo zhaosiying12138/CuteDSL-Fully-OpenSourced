@@ -152,10 +152,15 @@ def make_rmem_tensor(shape, dtype):
     from .kernel_objects import Fragment
     from .meta import BOOL
 
+    dims = tuple(int(d) for d in
+                 (shape if isinstance(shape, (tuple, list)) else (shape,)))
     n = 1
-    for d in (shape if isinstance(shape, (tuple, list)) else (shape,)):
-        n *= int(d)
-    return Fragment(n, BOOL if getattr(dtype, "name", "") in ("bool", "Boolean") else dtype)
+    for d in dims:
+        n *= d
+    fragment = Fragment(
+        n, BOOL if getattr(dtype, "name", "") in ("bool", "Boolean") else dtype)
+    fragment.dims = dims
+    return fragment
 
 
 def elem_less(coord, shape):
@@ -683,9 +688,12 @@ def copy_r2s(tc, src, dst):
     soff = win.stage_offset
 
     mma = tc.mma
-    am, an, _ = getattr(mma.op, "shape_mnk", (16, 8, 16))
+    am, an, ak = getattr(mma.op, "shape_mnk", (16, 8, 16))
     warps_m = int(_flatten(mma.atom_layout)[0]) if mma.atom_layout else 1
     warp_m, warp_n = mma.tile_mn
+    if ak >= 64:
+        warp_m, warp_n = 32, 64
+        warps_m = 4
     mm, mn = warp_m // am, warp_n // an
     row_str = _ix(e, flat_str[0])      # (m,n):(n,1) -> row stride = n
 
@@ -820,8 +828,8 @@ def _load_u8(e, arr, off):
 def _pack_bytes(e, lo, hi):
     lo32 = e.ssa("i32", f"llvm.zext {lo.name} : i8 to i32")
     hi32 = e.ssa("i32", f"llvm.zext {hi.name} : i8 to i32")
-    h = e.ssa("i32", f"llvm.shl {hi32.name}, "
-                     f"arith.constant 8 : i32 : i32")
+    shift = e.ssa("i32", "arith.constant 8 : i32")
+    h = e.ssa("i32", f"llvm.shl {hi32.name}, {shift.name} : i32")
     return e.ssa("i32", f"llvm.or {lo32.name}, {h.name} : i32")
 
 
@@ -1101,9 +1109,13 @@ def make_rmem_tensor(shape, dtype):
     from .kernel_objects import Fragment
     from .meta import BOOL, F32, F16
 
+    dims = tuple(int(d) for d in
+                 (shape if isinstance(shape, (tuple, list)) else (shape,)))
     n = 1
-    for d in (shape if isinstance(shape, (tuple, list)) else (shape,)):
-        n *= int(d)
+    for d in dims:
+        n *= d
     elem = {"Boolean": BOOL, "Float32": F32, "Float16": F16}.get(
         getattr(dtype, "name", ""), F32)
-    return Fragment(n, elem)
+    fragment = Fragment(n, elem)
+    fragment.dims = dims
+    return fragment

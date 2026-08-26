@@ -269,8 +269,18 @@ def cute_size(x, mode=None) -> int:
         return _prod(x.shape)
     if x is None:
         return 1
+    shape = getattr(x, "shape", None)
+    if isinstance(shape, (tuple, list)):
+        if mode is not None:
+            k = mode[0] if isinstance(mode, (list, tuple)) else mode
+            return _prod(shape[k])
+        return _prod(shape)
+    # A shape is represented by a tuple.  Its CuTe size is the product of
+    # extents, never Python's tuple length (the rank).
+    if isinstance(x, tuple):
+        return _prod(x)
+    if isinstance(x, int):
+        return x
     if hasattr(x, "__len__") and not isinstance(x, (str, bytes)):
         return len(x)
-    if isinstance(x, (int, tuple)):
-        return _prod(x)
     raise TypeError(f"cute.size on {type(x)}")

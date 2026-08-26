@@ -656,10 +656,7 @@ class R2SSmemView:
 
     @property
     def shape(self):
-        mma = self.tc.mma
-        am, an, _ = getattr(mma.op, "shape_mnk", (16, 8, 16))
-        mm = mma.tile_mn[0] // am
-        mn = mma.tile_mn[1] // an
+        mm, mn = _r2s_grid(self.tc)
         return (4, mm, mn, 1)
 
     def __getitem__(self, idx):
@@ -679,10 +676,34 @@ class AccumRetile:
     def __len__(self):
         return self.frag.count
 
+    @property
+    def shape(self):
+        mm, mn = _r2s_grid(self.tc)
+        return (4, mm, mn)
+
+    @property
+    def count(self):
+        return self.frag.count
+
     def __getitem__(self, i):
         if isinstance(i, (tuple, list)):
-            i = next((c for c in i if c is not None), 0)
-        return self.frag.slots[int(getattr(i, "value", i))]
+            from .kernel_objects import _FragSlice
+
+            return _FragSlice.from_modes(self.frag, i, shape=self.shape)
+        return self.frag[i]
+
+
+def _r2s_grid(tc):
+    """Return the per-warp accumulator atom grid used by R2S copies."""
+    mma = getattr(tc, "mma", None)
+    am, an, ak = getattr(getattr(mma, "op", None), "shape_mnk",
+                         (16, 8, 16))
+    warp_m, warp_n = getattr(mma, "tile_mn", (32, 32))
+    # The SM120 block-scaled (m16n8k64) atom layout is four warps along M
+    # and two along N over a 128x128 CTA tile: one warp owns 32x64.
+    if ak >= 64:
+        warp_m, warp_n = 32, 64
+    return warp_m // am, warp_n // an
 
 
 # ------------------------------------------------- smem->rmem tiled copies

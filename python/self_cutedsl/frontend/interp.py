@@ -110,13 +110,13 @@ class KernelInterpreter:
         if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Subscript):
             tgt = node.targets[0]
             base = self.eval(tgt.value)
-            from .kernel_objects import Fragment as _Frag
+            from .kernel_objects import Fragment as _Frag, _FragSlice
             from .meta import TensorMeta as _TM
 
-            if isinstance(base, _Frag):
+            if isinstance(base, (_Frag, _FragSlice)):
                 idx = self.eval(tgt.slice)
                 val = self.eval(node.value)
-                base.slots[int(_const_index(idx))] = val
+                base[idx] = val
             elif isinstance(base, list):
                 idx = int(_const_index(self.eval(tgt.slice)))
                 val = self.eval(node.value)
@@ -474,11 +474,10 @@ class KernelInterpreter:
             from . import builtins as _b
 
             return _b._coord_value(self.emitter, base, j)
-        if isinstance(base, Fragment):
+        from .kernel_objects import _FragSlice
+        if isinstance(base, (Fragment, _FragSlice)):
             v = self.eval(slice_node)
-            if isinstance(v, (tuple, list)):
-                v = next((c for c in v if c is not None), 0)
-            return base.slots.get(int(_const_index(v)))
+            return base[v]
         if isinstance(base, SSA):
             return self._load_elem(base, self.eval(slice_node))
         if isinstance(base, (list, tuple)):
@@ -589,6 +588,8 @@ class KernelInterpreter:
         self.emitter.store_f32(val, p)
 
     def binop(self, op, lhs, rhs):
+        lhs = _unwrap_typed_scalar(lhs)
+        rhs = _unwrap_typed_scalar(rhs)
         py_only = isinstance(lhs, (int, float)) and isinstance(rhs, (int, float))
         arith = {
             ast.Add: "arith.addi", ast.Sub: "arith.subi", ast.Mult: "arith.muli",
@@ -703,6 +704,21 @@ def _unwrap_constexpr(v):
     from cutlass.dtypes import Constexpr
 
     if isinstance(v, Constexpr):
+        return v.value
+    return v
+
+
+def _unwrap_typed_scalar(v):
+    """Fold cutlass.Int32(0)-style host constants during AST tracing.
+
+    Typed values that wrap SSA objects are runtime casts and remain typed;
+    only literal scalar payloads participate in Python constexpr arithmetic.
+    """
+    try:
+        from cutlass.dtypes import TypedValue
+    except ImportError:
+        return v
+    if isinstance(v, TypedValue) and isinstance(v.value, (bool, int, float)):
         return v.value
     return v
 
