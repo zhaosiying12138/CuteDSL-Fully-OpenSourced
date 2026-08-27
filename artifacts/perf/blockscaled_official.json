@@ -1,0 +1,84 @@
+{
+ "family": "blockscaled_gemm",
+ "stack": "official",
+ "generated_at": "2026-08-27T23:13:05",
+ "torch_version": "2.13.0+cu130",
+ "gpu_meta": {
+  "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "driver_version": "610.74",
+  "utilization.gpu": "25",
+  "memory.used": "3458",
+  "clocks.sm": "2220",
+  "clocks.mem": "14001",
+  "power.draw": "50.27",
+  "temperature.gpu": "55",
+  "source": "/usr/lib/wsl/lib/nvidia-smi"
+ },
+ "params": {
+  "warmup": 10,
+  "iters": 50,
+  "tile_shape_mnk": [
+   128,
+   128,
+   128
+  ],
+  "epi_tile": [
+   128,
+   128
+  ],
+  "dtypes": "nvfp4xnvfp4->fp16, sf e4m3 sv16",
+  "shapes": [
+   [
+    1024,
+    1024,
+    1024,
+    1
+   ],
+   [
+    1024,
+    4096,
+    4096,
+    1
+   ],
+   [
+    4096,
+    4096,
+    4096,
+    1
+   ]
+  ]
+ },
+ "cases": [
+  {
+   "shape": [
+    1024,
+    1024,
+    1024,
+    1
+   ],
+   "median_us": 10.0,
+   "tflops": 214.1
+  },
+  {
+   "shape": [
+    1024,
+    4096,
+    4096,
+    1
+   ],
+   "median_us": 78.3,
+   "tflops": 438.9
+  },
+  {
+   "shape": [
+    4096,
+    4096,
+    4096,
+    1
+   ],
+   "median_us": 239.0,
+   "tflops": 575.2
+  }
+ ],
+ "kernel": "blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py UNMODIFIED"
+}

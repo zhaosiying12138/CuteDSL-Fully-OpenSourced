@@ -1,0 +1,215 @@
+{
+ "generated_at": "2026-08-27T23:42:43",
+ "families": {
+  "elementwise": {
+   "title": "elementwise_add (FP32, Ampere demo)",
+   "cases": [
+    {
+     "shape": "1024x1024",
+     "official_us": 15.4,
+     "self_us": 16.2,
+     "pct": 95.1
+    },
+    {
+     "shape": "2048x2048",
+     "official_us": 70.8,
+     "self_us": 78.1,
+     "pct": 90.7
+    },
+    {
+     "shape": "8192x8192",
+     "official_us": 1250.5,
+     "self_us": 1244.2,
+     "pct": 100.5
+    }
+   ],
+   "family_pct": 95.4
+  },
+  "dense_gemm": {
+   "title": "dense_gemm (FP16, tile 64x64x64)",
+   "cases": [
+    {
+     "shape": "2048x2048x2048x1",
+     "official_us": 179.3,
+     "self_us": 245.9,
+     "pct": 72.9
+    },
+    {
+     "shape": "4096x4096x4096x1",
+     "official_us": 1561.2,
+     "self_us": 1741.2,
+     "pct": 89.7
+    },
+    {
+     "shape": "4104x2056x512x1",
+     "official_us": 119.1,
+     "self_us": 129.1,
+     "pct": 92.3
+    }
+   ],
+   "family_pct": 85.0
+  },
+  "blockscaled": {
+   "title": "blockscaled GEMM (NVFP4 coop, tile 128x128x128)",
+   "cases": [
+    {
+     "shape": "1024x1024x1024x1",
+     "official_us": 10.0,
+     "self_us": 31.7,
+     "pct": 31.5
+    },
+    {
+     "shape": "1024x4096x4096x1",
+     "official_us": 78.3,
+     "self_us": 131.1,
+     "pct": 59.7
+    },
+    {
+     "shape": "4096x4096x4096x1",
+     "official_us": 239.0,
+     "self_us": 405.0,
+     "pct": 59.0
+    }
+   ],
+   "family_pct": 50.1
+  },
+  "norm_rmsnorm_fp4quant": {
+   "title": "flashinfer rmsnorm_fp4quant (FP16->NVFP4)",
+   "cases": [
+    {
+     "shape": "1024x2048",
+     "official_us": 15.71,
+     "self_us": 64.0,
+     "pct": 24.5
+    },
+    {
+     "shape": "16384x2048",
+     "official_us": 88.8,
+     "self_us": 90.85,
+     "pct": 97.7
+    },
+    {
+     "shape": "4096x5120",
+     "official_us": 74.69,
+     "self_us": 57.79,
+     "pct": 129.2
+    }
+   ],
+   "family_pct": 83.8
+  },
+  "norm_add_rmsnorm_fp4quant": {
+   "title": "flashinfer add_rmsnorm_fp4quant",
+   "cases": [
+    {
+     "shape": "1024x2048",
+     "official_us": 22.02,
+     "self_us": 75.23,
+     "pct": 29.3
+    },
+    {
+     "shape": "16384x2048",
+     "official_us": 274.18,
+     "self_us": 293.6,
+     "pct": 93.4
+    },
+    {
+     "shape": "4096x5120",
+     "official_us": 165.57,
+     "self_us": 198.21,
+     "pct": 83.5
+    }
+   ],
+   "family_pct": 68.7
+  },
+  "b12x_moe": {
+   "title": "flashinfer b12x fused MoE (W4A16 NVFP4)",
+   "cases": [
+    {
+     "shape": "experts=128 hidden=2048 intermediate=768 topk=8 tokens=64",
+     "official_us": 468.67,
+     "self_us": 1267.97,
+     "pct": 37.0
+    },
+    {
+     "shape": "experts=128 hidden=2048 intermediate=768 topk=8 tokens=2048",
+     "official_us": 994.66,
+     "self_us": 1624.64,
+     "pct": 61.2
+    },
+    {
+     "shape": "experts=32 hidden=4096 intermediate=1024 topk=4 tokens=4096",
+     "official_us": 2237.89,
+     "self_us": 2923.01,
+     "pct": 76.6
+    }
+   ],
+   "family_pct": 58.3
+  }
+ },
+ "headline": {
+  "convention": "arithmetic mean over the 6 official-baselined families of (family mean of official_us/self_us x 100)",
+  "pct": 73.5,
+  "families": {
+   "elementwise": 95.4,
+   "dense_gemm": 85.0,
+   "blockscaled": 50.1,
+   "norm_rmsnorm_fp4quant": 83.8,
+   "norm_add_rmsnorm_fp4quant": 68.7,
+   "b12x_moe": 58.3
+  }
+ },
+ "mla": {
+  "golden": [
+   {
+    "B": 1,
+    "S": 1024,
+    "H": 64,
+    "status": "PASS"
+   },
+   {
+    "B": 2,
+    "S": 2048,
+    "H": 64,
+    "status": "PASS"
+   },
+   {
+    "B": 1,
+    "S": 4096,
+    "H": 128,
+    "status": "PASS"
+   },
+   {
+    "B": 4,
+    "S": 512,
+    "H": 128,
+    "status": "PASS"
+   }
+  ],
+  "perf": [
+   {
+    "B": 1,
+    "S": 1024,
+    "H": 64,
+    "self_us": 45.8,
+    "torch_ref_us": 84.1,
+    "speedup_vs_torch": 1.84
+   },
+   {
+    "B": 1,
+    "S": 4096,
+    "H": 128,
+    "self_us": 101.5,
+    "torch_ref_us": 109.3,
+    "speedup_vs_torch": 1.08
+   },
+   {
+    "B": 2,
+    "S": 2048,
+    "H": 128,
+    "self_us": 100.6,
+    "torch_ref_us": 214.6,
+    "speedup_vs_torch": 2.13
+   }
+  ]
+ }
+}

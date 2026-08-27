@@ -195,7 +195,7 @@ def main() -> int:
                 shape = r.get("shape") or [r.get("B"), r.get("S"), r.get("H")]
                 md.append(f"| {shape} | {r.get('self_us')} | "
                           f"{r.get('torch_ref_us', r.get('torch_us'))} | "
-                          f"**{r.get('speedup')}x** |")
+                          f"**{r.get('speedup_vs_torch', r.get('speedup'))}x** |")
             md.append("")
         summary["mla"] = mla
 

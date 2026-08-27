@@ -1,7 +1,31 @@
 {
- "captured": "2026-08-27 (post unified recalibration 6eae5c8, audited)",
+ "captured": "2026-08-27T23:42:43",
  "gpu": "RTX 5090 Laptop (sm_120a)",
- "kernel": "blackwell_geforce/dense_gemm.py UNMODIFIED, tile (64,64,64)",
+ "kernel": "blackwell_geforce/kernel/dense_gemm/dense_gemm.py UNMODIFIED",
+ "conditions": {
+  "official_gpu_meta": {
+   "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+   "driver_version": "610.74",
+   "utilization.gpu": "15",
+   "memory.used": "3413",
+   "clocks.sm": "2115",
+   "clocks.mem": "14001",
+   "power.draw": "45.41",
+   "temperature.gpu": "55",
+   "source": "/usr/lib/wsl/lib/nvidia-smi"
+  },
+  "self_gpu_meta": {
+   "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+   "driver_version": "610.74",
+   "utilization.gpu": "14",
+   "memory.used": "3183",
+   "clocks.sm": "2167",
+   "clocks.mem": "14001",
+   "power.draw": "49.07",
+   "temperature.gpu": "55",
+   "source": "/usr/lib/wsl/lib/nvidia-smi"
+  }
+ },
  "cases": [
   {
    "shape": [
@@ -10,11 +34,11 @@
     2048,
     1
    ],
-   "official_us": 321.9,
-   "self_us": 193.9,
-   "official_tflops": 53.4,
-   "self_tflops": 88.6,
-   "ratio": 1.66
+   "official_us": 179.3,
+   "self_us": 245.9,
+   "official_tflops": 95.8,
+   "self_tflops": 69.9,
+   "ratio": 0.73
   },
   {
    "shape": [
@@ -23,12 +47,11 @@
     4096,
     1
    ],
-   "official_us": 1671.9,
-   "self_us": 1708.2,
-   "official_tflops": 82.2,
-   "self_tflops": 80.5,
-   "ratio": 0.98,
-   "note": "official baseline log measured 1604.8us"
+   "official_us": 1561.2,
+   "self_us": 1741.2,
+   "official_tflops": 88.0,
+   "self_tflops": 78.9,
+   "ratio": 0.9
   },
   {
    "shape": [
@@ -37,12 +60,11 @@
     512,
     1
    ],
-   "official_us": 459.4,
-   "self_us": 221.2,
-   "official_tflops": 41.4,
-   "self_tflops": 39.1,
-   "ratio": 0.95,
-   "note": "boundary case from the M0 baseline log; K=512 has fewer k-tiles so the swizzle tax is small"
+   "official_us": 119.1,
+   "self_us": 129.1,
+   "official_tflops": 72.5,
+   "self_tflops": 66.9,
+   "ratio": 0.92
   }
  ]
 }

@@ -1,0 +1,188 @@
+{
+ "family": "community_baselines",
+ "stack": "torch",
+ "generated_at": "2026-08-27T22:56:19",
+ "torch_version": "2.13.0+cu130",
+ "gpu_meta": {
+  "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "driver_version": "610.74",
+  "utilization.gpu": "11",
+  "memory.used": "3881",
+  "clocks.sm": "2055",
+  "clocks.mem": "14001",
+  "power.draw": "41.16",
+  "temperature.gpu": "53",
+  "source": "/usr/lib/wsl/lib/nvidia-smi"
+ },
+ "params": {
+  "warmup": 10,
+  "iters": 50,
+  "norm_shapes": [
+   [
+    1024,
+    2048
+   ],
+   [
+    16384,
+    2048
+   ],
+   [
+    4096,
+    5120
+   ]
+  ],
+  "gemm_shapes": [
+   [
+    2048,
+    2048,
+    2048
+   ],
+   [
+    4096,
+    4096,
+    4096
+   ],
+   [
+    4104,
+    2056,
+    512
+   ]
+  ],
+  "torch": "2.13.0+cu130"
+ },
+ "cases": [
+  {
+   "median_us": 85.15,
+   "p10_us": 54.69,
+   "p90_us": 94.98,
+   "min_us": 52.64,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 98.5,
+   "impl": "torch_eager",
+   "shape": [
+    1024,
+    2048
+   ]
+  },
+  {
+   "median_us": 37.06,
+   "p10_us": 5.73,
+   "p90_us": 70.78,
+   "min_us": 5.7,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 226.4,
+   "impl": "torch_compile",
+   "shape": [
+    1024,
+    2048
+   ]
+  },
+  {
+   "median_us": 2095.58,
+   "p10_us": 1678.78,
+   "p90_us": 2907.55,
+   "min_us": 1663.68,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 64.0,
+   "impl": "torch_eager",
+   "shape": [
+    16384,
+    2048
+   ]
+  },
+  {
+   "median_us": 169.28,
+   "p10_us": 168.03,
+   "p90_us": 185.09,
+   "min_us": 129.86,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 792.9,
+   "impl": "torch_compile",
+   "shape": [
+    16384,
+    2048
+   ]
+  },
+  {
+   "median_us": 1051.97,
+   "p10_us": 1013.89,
+   "p90_us": 1904.93,
+   "min_us": 1000.77,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 79.7,
+   "impl": "torch_eager",
+   "shape": [
+    4096,
+    5120
+   ]
+  },
+  {
+   "median_us": 93.7,
+   "p10_us": 91.07,
+   "p90_us": 103.78,
+   "min_us": 79.26,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 895.3,
+   "impl": "torch_compile",
+   "shape": [
+    4096,
+    5120
+   ]
+  },
+  {
+   "median_us": 194.21,
+   "p10_us": 192.13,
+   "p90_us": 199.55,
+   "min_us": 190.85,
+   "warmup": 10,
+   "iters": 50,
+   "tflops": 88.5,
+   "impl": "cublas",
+   "shape": [
+    2048,
+    2048,
+    2048
+   ]
+  },
+  {
+   "median_us": 1582.46,
+   "p10_us": 1548.74,
+   "p90_us": 2360.86,
+   "min_us": 1545.5,
+   "warmup": 10,
+   "iters": 50,
+   "tflops": 86.9,
+   "impl": "cublas",
+   "shape": [
+    4096,
+    4096,
+    4096
+   ]
+  },
+  {
+   "median_us": 134.78,
+   "p10_us": 133.98,
+   "p90_us": 136.54,
+   "min_us": 132.77,
+   "warmup": 10,
+   "iters": 50,
+   "tflops": 64.1,
+   "impl": "cublas",
+   "shape": [
+    4104,
+    2056,
+    512
+   ]
+  }
+ ],
+ "notes": [
+  "norm baselines cover the RMSNorm core only (no NVFP4 quantize); the fused CuTeDSL operators do strictly more work per row",
+  "MoE: no aligned community kernel in this environment (N/A)"
+ ]
+}

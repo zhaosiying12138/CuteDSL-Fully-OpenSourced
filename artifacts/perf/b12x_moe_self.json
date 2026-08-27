@@ -1,0 +1,97 @@
+{
+ "family": "flashinfer_b12x_moe",
+ "stack": "self",
+ "generated_at": "2026-08-27T23:13:13",
+ "torch_version": "2.13.0+cu130",
+ "gpu_meta": {
+  "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "driver_version": "610.74",
+  "utilization.gpu": "13",
+  "memory.used": "2957",
+  "clocks.sm": "1350",
+  "clocks.mem": "9001",
+  "power.draw": "67.03",
+  "temperature.gpu": "55",
+  "source": "/usr/lib/wsl/lib/nvidia-smi"
+ },
+ "params": {
+  "warmup": 3,
+  "iters": 20,
+  "quant_mode": "nvfp4",
+  "act_dtype": "bfloat16",
+  "shapes": [
+   [
+    128,
+    2048,
+    768,
+    8,
+    64
+   ],
+   [
+    128,
+    2048,
+    768,
+    8,
+    2048
+   ],
+   [
+    32,
+    4096,
+    1024,
+    4,
+    4096
+   ]
+  ]
+ },
+ "cases": [
+  {
+   "median_us": 1267.97,
+   "p10_us": 896.77,
+   "p90_us": 1543.78,
+   "min_us": 883.62,
+   "warmup": 3,
+   "iters": 20,
+   "tflops": 1.9,
+   "shape": {
+    "experts": 128,
+    "hidden": 2048,
+    "intermediate": 768,
+    "topk": 8,
+    "tokens": 64
+   }
+  },
+  {
+   "median_us": 1624.64,
+   "p10_us": 1307.46,
+   "p90_us": 2271.87,
+   "min_us": 1303.42,
+   "warmup": 3,
+   "iters": 20,
+   "tflops": 47.6,
+   "shape": {
+    "experts": 128,
+    "hidden": 2048,
+    "intermediate": 768,
+    "topk": 8,
+    "tokens": 2048
+   }
+  },
+  {
+   "median_us": 2923.01,
+   "p10_us": 2696.77,
+   "p90_us": 3939.9,
+   "min_us": 2440.0,
+   "warmup": 3,
+   "iters": 20,
+   "tflops": 70.5,
+   "shape": {
+    "experts": 32,
+    "hidden": 4096,
+    "intermediate": 1024,
+    "topk": 4,
+    "tokens": 4096
+   }
+  }
+ ],
+ "kernel": "flashinfer fused_moe/cute_dsl/b12x_moe.py + blackwell_sm12x/* UNMODIFIED"
+}

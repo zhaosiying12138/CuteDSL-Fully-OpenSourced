@@ -1,0 +1,80 @@
+{
+ "family": "flashinfer_add_rmsnorm_fp4quant",
+ "stack": "self",
+ "generated_at": "2026-08-27T23:13:07",
+ "torch_version": "2.13.0+cu130",
+ "gpu_meta": {
+  "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "driver_version": "610.74",
+  "utilization.gpu": "15",
+  "memory.used": "3414",
+  "clocks.sm": "1935",
+  "clocks.mem": "14001",
+  "power.draw": "42.46",
+  "temperature.gpu": "55",
+  "source": "/usr/lib/wsl/lib/nvidia-smi"
+ },
+ "params": {
+  "warmup": 10,
+  "iters": 50,
+  "block_size": 16,
+  "global_scale": 2.4494897427831783,
+  "dtype": "float16",
+  "shapes": [
+   [
+    1024,
+    2048
+   ],
+   [
+    16384,
+    2048
+   ],
+   [
+    4096,
+    5120
+   ]
+  ]
+ },
+ "cases": [
+  {
+   "median_us": 75.23,
+   "p10_us": 67.42,
+   "p90_us": 99.87,
+   "min_us": 25.54,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 182.9,
+   "shape": [
+    1024,
+    2048
+   ]
+  },
+  {
+   "median_us": 293.6,
+   "p10_us": 292.19,
+   "p90_us": 296.19,
+   "min_us": 290.78,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 750.0,
+   "shape": [
+    16384,
+    2048
+   ]
+  },
+  {
+   "median_us": 198.21,
+   "p10_us": 196.99,
+   "p90_us": 200.22,
+   "min_us": 194.11,
+   "warmup": 10,
+   "iters": 50,
+   "gb_s": 694.3,
+   "shape": [
+    4096,
+    5120
+   ]
+  }
+ ],
+ "kernel": "flashinfer cute_dsl/add_rmsnorm_fp4quant.py UNMODIFIED"
+}
