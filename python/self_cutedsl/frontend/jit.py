@@ -89,6 +89,10 @@ class _KernelRecord:
     #   ("jit", name, mlir_type)  scalar from the jit call
     #   ("tensor", name)          device pointer from the jit call's tensor
     abi: list = field(default_factory=list)
+    # tma entry name -> host tensor/pointer param name whose ADDRESS the
+    # descriptor was encoded against (exact, resolved via the per-call
+    # address table); lets cached plans re-encode stale descriptors
+    tma_sources: dict = field(default_factory=dict)
 
 
 class KernelFunction:
@@ -187,8 +191,26 @@ class _KernelCallStub:
             launch_grid = (linear, 1, 1)
         else:
             launch_grid = requested_grid[:3]
+        # resolve each tma view's SOURCE tensor/pointer name via the
+        # per-call address table (addresses are unique within one call) —
+        # cached plans use this to re-encode descriptors when the source
+        # tensor address changes between calls
+        call_addrs = _host_trace.get("call_addrs", {})
+        tma_sources = {}
+        for entry in abi:
+            if entry[0] != "tma":
+                continue
+            view = _host_trace_tma.get(entry[1])
+            if view is None:
+                continue
+            src_addr = view.source_addr
+            for src_name, addr in call_addrs.items():
+                if addr == src_addr:
+                    tma_sources[entry[1]] = src_name
+                    break
         _host_trace["records"].append(
-            _KernelRecord(emitter, launch_grid, tuple(block), abi))
+            _KernelRecord(emitter, launch_grid, tuple(block), abi,
+                          tma_sources))
 
 
 class _CachedLaunch:
@@ -270,6 +292,11 @@ class JitFunction:
                 bound[p.name] = v
                 tensors[p.name] = v
                 _host_trace.setdefault("tensor_names", {})[id(v)] = p.name
+                try:
+                    _host_trace.setdefault("call_addrs", {})[p.name] = \
+                        int(getattr(v, "_pointer", v))
+                except (TypeError, ValueError):
+                    pass
                 key_parts.append((
                     p.name,
                     "pointer",
@@ -289,6 +316,11 @@ class JitFunction:
                 bound[p.name] = v
                 tensors[p.name] = v
                 _host_trace.setdefault("tensor_names", {})[id(v)] = p.name
+                try:
+                    _host_trace.setdefault("call_addrs", {})[p.name] = \
+                        int(v._torch.data_ptr())
+                except Exception:
+                    pass
                 if getattr(v, "_mark_dynamic", False):
                     # P5 policy: marked extents leave the specialization
                     # key and ride the runtime-scalar channel instead —
@@ -359,7 +391,7 @@ class JitFunction:
                     block=rec.block,
                 )
                 manifest.uses_printf = rec.emitter.uses_printf
-                plans.append((jit, manifest, rec.abi))
+                plans.append((jit, manifest, rec.abi, rec.tma_sources))
             cached = plans
             # A host-only @cute.jit (for example the SF layout scatter)
             # performs its work while _trace executes and has no launch plan.
@@ -372,13 +404,35 @@ class JitFunction:
             return
 
         needs_sync = False
-        for jit, manifest, abi in cached:
+        for jit, manifest, abi, tma_sources in cached:
             vals = []
             for entry in abi:
                 if entry[0] in ("tensor", "pointer"):
                     vals.append(tensors[entry[1]])
                 elif entry[0] == "tma":
-                    vals.append(_host_trace_tma[entry[1]].device_copy)
+                    view = _host_trace_tma[entry[1]]
+                    src_name = tma_sources.get(entry[1])
+                    if src_name is not None:
+                        # cached plan: re-encode the 128-byte descriptor if
+                        # the source tensor moved between calls (stale
+                        # descriptors made later launches read whatever the
+                        # FIRST caller's tensors held)
+                        cur = tensors.get(src_name)
+                        addr = _launch_addr_of(cur)
+                        import os as _os_dbg
+                        if _os_dbg.environ.get("SC_TMA_DEBUG"):
+                            import sys as _s_dbg
+                            print(f"[TMAFIX] {entry[1]}: src={src_name} "
+                                  f"old=0x{int(view.source_addr):x} "
+                                  f"new={addr if addr is None else hex(int(addr))}",
+                                  file=_s_dbg.stderr, flush=True)
+                        if addr is not None and \
+                                int(addr) != int(view.source_addr):
+                            from self_cutedsl.runtime.tensor_map import \
+                                CUtensorMapView as _TMAView
+                            view = _TMAView(view.recipe, int(addr))
+                            _host_trace_tma[entry[1]] = view  # keep-alive
+                    vals.append(view.device_copy)
                 else:
                     vals.append(_host_trace_runtime[entry[1]])
             rec_emitter_printf = getattr(manifest, "uses_printf", False)
@@ -467,6 +521,24 @@ class JitFunction:
             return list(_host_trace["records"])
         finally:
             _host_trace.update(active=None, records=[])
+
+
+def _launch_addr_of(v):
+    """Device address of a bound tensor/pointer value (for TMA refresh)."""
+    if v is None:
+        return None
+    if hasattr(v, "_torch"):
+        try:
+            return int(v._torch.data_ptr())
+        except Exception:
+            return None
+    p = getattr(v, "_pointer", None)
+    if p is not None:
+        return int(p)
+    if isinstance(v, int):
+        return v
+    dp = getattr(v, "data_ptr", None)
+    return int(dp()) if dp is not None else None
 
 
 def _abi_mlir_type(entry) -> str:

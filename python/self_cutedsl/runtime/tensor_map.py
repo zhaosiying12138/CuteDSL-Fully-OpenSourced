@@ -94,6 +94,7 @@ class CUtensorMapView:
         else:
             address = device_tensor
         self.recipe = recipe
+        self.source_addr = int(address)  # address the descriptor encodes
         host_bytes = encode_to_bytes(recipe, address)
         self.device_copy = torch.frombuffer(bytearray(host_bytes),
                                             dtype=torch.uint8).to("cuda")
