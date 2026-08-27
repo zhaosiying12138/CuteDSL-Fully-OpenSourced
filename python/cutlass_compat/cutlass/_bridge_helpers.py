@@ -34,6 +34,10 @@ class TypedScalar:
             self.ssa = value.ssa
             self.dtype = dtype or value.dtype
             self.value = value.value
+        elif ssa is None and hasattr(value, "ssa") and not hasattr(value, "dtype"):
+            # IrValue wrapper from the _mlir bridge
+            self.ssa = value.ssa
+            self.value = None
         elif ssa is None and hasattr(value, "name") and hasattr(value, "type"):
             # raw emitter SSA handle
             self.ssa = value
@@ -41,17 +45,25 @@ class TypedScalar:
 
     # -- official API -----------------------------------------------------
     def ir_value(self, loc=None, ip=None):
+        lit = None
         if self.ssa is None:
             e = _emitter()
+            if isinstance(self.value, (int, float)) \
+                    and not isinstance(self.value, bool):
+                lit = self.value
             if isinstance(self.value, int):
                 ty = self.dtype.mlir if self.dtype else "i32"
                 self.ssa = e.ssa(ty, f"arith.constant {int(self.value)} : {ty}")
             elif isinstance(self.value, float):
-                self.ssa = e.ssa("f32",
-                                 f"arith.constant {float(self.value)!r} : f32")
+                self.ssa = e.ssa(
+                    "f32",
+                    "arith.constant " + f"{float(self.value):.10e}".replace("+", "") + " : f32")
             else:
                 raise TypeError(f"no SSA for {self!r}")
-        return __import__("cutlass._mlir.ir", fromlist=["IrValue"]).IrValue(self.ssa)
+        iv = __import__("cutlass._mlir.ir", fromlist=["IrValue"]).IrValue(self.ssa)
+        if lit is not None:
+            iv.const_val = lit
+        return iv
 
     # -- arithmetic (traced when both sides carry SSA) --------------------
     def _bin(self, other, op_int, op_flt):

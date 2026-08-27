@@ -29,10 +29,11 @@ class Type:
 class IrValue:
     """Wraps a self-stack SSA handle so ir_value() round-trips."""
 
-    __slots__ = ("ssa",)
+    __slots__ = ("ssa", "const_val")
 
-    def __init__(self, ssa):
+    def __init__(self, ssa, const_val=None):
         self.ssa = ssa
+        self.const_val = const_val
 
     def __repr__(self):
         return f"IrValue({getattr(self.ssa, 'name', self.ssa)!r})"

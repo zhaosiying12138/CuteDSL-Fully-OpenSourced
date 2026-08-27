@@ -45,6 +45,50 @@ class KernelTensor:
     def iterator(self):
         return _IterPtr(self.ptr, self)
 
+    def __getitem__(self, idx):
+        """KernelTensor[i] / [r, c]: gmem element load (flat coordinate
+        through the meta strides). Returns a Float32 typed scalar."""
+        if not isinstance(idx, (tuple, list)):
+            idx = (idx,)
+        strides = tuple(getattr(self.meta, "stride", None)
+                        or _row_major_of(tuple(self.meta.shape)))
+        from .emitter import SSA as _S
+        from cutlass._bridge_helpers import _emitter
+        from cutlass import Float32
+        e = _emitter()
+        total = None
+        for c, st in zip(idx, strides):
+            v = c.ssa if hasattr(c, "ssa") else c
+            if isinstance(v, _S):
+                if v.type == "index":
+                    v = e.ssa("i64", f"arith.index_cast {v.name} : index to i64")
+                elif v.type == "i32":
+                    v = e.ssa("i64", f"arith.extsi {v.name} : i32 to i64")
+                c64 = e.ssa("i64", f"arith.constant {int(st)} : i64")
+                term = e.ssa("i64", f"arith.muli {v.name}, {c64.name} : i64") \
+                    if int(st) != 1 else v
+                total = term if total is None else \
+                    e.ssa("i64", f"arith.addi {total.name}, {term.name} : i64")
+            else:
+                piece = int(v) * int(st)
+                if total is None or isinstance(total, int):
+                    total = piece if total is None else total + piece
+        if total is None:
+            total = 0
+        if isinstance(total, int):
+            total = e.ssa("i64", f"arith.constant {total} : i64")
+        elem = getattr(self.meta, "element_type", None)
+        ety = {"Float16": "f16", "f16": "f16", "float16": "f16",
+               "Float32": "f32", "f32": "f32", "float32": "f32"}.get(
+            getattr(elem, "name", ""), "f32")
+        p2 = e.ssa("!llvm.ptr<1>",
+                   f"llvm.getelementptr {self.ptr.name}[{total.name}] : "
+                   f"(!llvm.ptr<1>, i64) -> !llvm.ptr<1>, {ety}")
+        if ety == "f16":
+            v16 = e.ssa("f16", f"llvm.load {p2.name} : !llvm.ptr<1> -> f16")
+            return Float32(e.ssa("f32", f"llvm.fpext {v16.name} : f16 to f32"))
+        return Float32(e.ssa("f32", f"llvm.load {p2.name} : !llvm.ptr<1> -> f32"))
+
     @property
     def is_tiled(self) -> bool:
         from .meta import TiledTensorMeta
