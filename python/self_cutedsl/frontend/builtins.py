@@ -364,7 +364,11 @@ def make_smem_array(name: str, count: int, element=None):
 
     e = _emitter()
     elem = element or F16
-    e.smem_global_declare(f"{name}", int(count), "f16")
+    # declaration must match the gep element used for addressing (interp
+    # load/store gep by f16/f32), else f32 arrays get half-size allocations
+    ety = {"f16": "f16", "float16": "f16", "f32": "f32", "float32": "f32",
+           "i8": "i8", "uint8": "i8"}.get(elem.name.lower(), "f16")
+    e.smem_global_declare(f"{name}", int(count), ety)
     ptr = e.smem_ptr(name)
     return SmemArray(ptr, int(count), elem)
 
@@ -1118,6 +1122,40 @@ def copy(atom_or_view, *rest, mbarrier=None, pred=None):
     raise NotImplementedError(f"copy on {type(atom_or_view)}")
 
 
+def const_f32(v):
+    e = _emitter()
+    return e.ssa("f32", f"arith.constant {float(v) :.10e} : f32".replace("+", ""))
+
+
+def exp_f32(v):
+    """cute.exp — f32 exp via ex2.approx PTX: exp(x) = ex2(x*log2e)."""
+    e = _emitter()
+    l2e = e.ssa("f32", "arith.constant 1.4426950408889634 : f32")
+    x = e.ssa("f32", f"arith.mulf {v.name}, {l2e.name} : f32")
+    return e.ssa(
+        "f32",
+        'nvvm.inline_ptx "ex2.approx.f32 $0, $1;" ro (' +
+        f"{x.name} : f32) -> f32")
+
+
+def fptrunc_f16(v):
+    """f32 -> f16 value conversion (for p/v stores)."""
+    e = _emitter()
+    return e.ssa("f16", f"llvm.fptrunc {v.name} : f32 to f16")
+
+
+def fmax_f32(a, b):
+    e = _emitter()
+    c = e.ssa("i1", f"arith.cmpf ogt, {a.name}, {b.name} : f32")
+    return e.ssa("f32", f"arith.select {c.name}, {a.name}, {b.name} : f32")
+
+
+def min_i32(a, b):
+    e = _emitter()
+    c = e.ssa("i1", f"arith.cmpi slt, {a.name}, {b.name} : i32")
+    return e.ssa("i32", f"arith.select {c.name}, {a.name}, {b.name} : i32")
+
+
 def smem_stage(smem_arr, stage, elems_per_stage):
     """Window a staged smem array at (stage * elems_per_stage). stage may
     be an SSA index — returns a SmemArray view with SSA offset base."""
@@ -1196,6 +1234,15 @@ def idx_to_i32(v):
     if v.type == "i32":
         return v
     return e.ssa("i32", f"arith.index_cast {v.name} : {v.type} to i32")
+
+
+def i32_to_index(v):
+    e = _emitter()
+    if isinstance(v, int):
+        return e.ssa("index", f"arith.constant {v} : index")
+    if v.type == "index":
+        return v
+    return e.ssa("index", f"arith.index_cast {v.name} : {v.type} to index")
 
 
 def mul_i32(a, b):

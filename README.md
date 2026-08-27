@@ -151,12 +151,15 @@ Honest boundaries (general properties, not shape special-cases):
   (dense), racecheck 0 hazards (4-k-tile stage-wrap config), synccheck 0.
 - Perf ledger: `artifacts/perf/comparison.md` — elementwise 101–228%,
   dense_gemm 83%@2048³ / 44%@4096³ / 95% boundary, blockscaled nvfp4
-  67%@4096³.
+  67%@4096³, self-built MLA decode 1.08–2.13× vs PyTorch reference
+  (`artifacts/perf/mla_decode_self.json`).
 - SBOM + anti-cheat attestations: `artifacts/SBOM.md`.
 - Honest boundaries: dense_gemm tile_m=128 SMEM overflow (official skips
   too) & tile_n=128 epi; blockscaled sv=32 hang & unaligned-boundary host
-  alignment; oversubscribed persistent grids need scf.while; FlashMLA/
-  MLA-decode = SM100-tcgen05 hardware boundary (official arch-gate).
+  alignment; oversubscribed persistent grids need scf.while; FlashMLA =
+  SM100-tcgen05 hardware boundary for the OFFICIAL kernels (arch-gate),
+  answered on the self stack by a self-built sm120 warp-mma MLA core
+  (option B, see operator matrix).
 
 ### Status: M0 complete — official baseline frozen (2026-08-25)
 
@@ -168,7 +171,7 @@ Honest boundaries (general properties, not shape special-cases):
 | RMSNorm + FP4 quant fusion (1007 parametrized tests) | FlashInfer `cute_dsl/rmsnorm_fp4quant.py` @ 9d33a28e | ✅ PASS | 🔨 M2+ |
 | Add + RMSNorm + FP4 quant fusion (1188 tests) | FlashInfer `cute_dsl/add_rmsnorm_fp4quant.py` | ✅ PASS | 🔨 M2+ |
 | W4A16 FP4 fused MoE B12x (142 functional tests incl. 36 numerical-accuracy configs) | FlashInfer `fused_moe/cute_dsl/blackwell_sm12x/` | ✅ PASS | 🔨 M6+ |
-| FlashMLA / MLA decode | (a) CUTLASS `blackwell/attention/mla/mla_decode_fp16.py`; (b) IISuperluminaLII/FlashMLA_Windows_Linux_sm120; (c) fernandaspets/vllm_FlashMLA | ❌ **not runnable on this GPU via official CuTeDSL — verified empirically 2026-08-27**: (a) official CuTeDSL arch-gate rejects sm_120a (`expects sm_100a/sm_100f/sm_110a… got sm_120a` — tcgen05/TMEM is data-center-Blackwell-only hardware); (b)+(c) cloned & audited: both are **nvcc/CUDA-extension C++ implementations** (18/21 .cu kernels, zero CuTeDSL/`cutlass.cute`/`cute.jit` references; Python files are test/bench harness only) — import in `.venv-reference` fails with `Unable to import FlashMLA CUDA extension` (repo b) / `No module named flash_mla.cuda` (repo c). Neither can "work on official CuTeDSL" — they are not CuTeDSL programs at all | n/a (hardware boundary) |
+| FlashMLA / MLA decode | (a) CUTLASS `blackwell/attention/mla/mla_decode_fp16.py`; (b) IISuperluminaLII/FlashMLA_Windows_Linux_sm120; (c) fernandaspets/vllm_FlashMLA | ❌ **not runnable on this GPU via official CuTeDSL — verified empirically 2026-08-27**: (a) official CuTeDSL arch-gate rejects sm_120a (`expects sm_100a/sm_100f/sm_110a… got sm_120a` — tcgen05/TMEM is data-center-Blackwell-only hardware); (b)+(c) cloned & audited: both are **nvcc/CUDA-extension C++ implementations** (18/21 .cu kernels, zero CuTeDSL/`cutlass.cute`/`cute.jit` references; Python files are test/bench harness only) — import in `.venv-reference` fails with `Unable to import FlashMLA CUDA extension` (repo b) / `No module named flash_mla.cuda` (repo c). Neither can "work on official CuTeDSL" — they are not CuTeDSL programs at all | ✅ **option B: self-built sm120 warp-mma MLA decode core** (absorbed form, split-KV FlashDecoding, online softmax, register O-accumulator, runtime-S `scf.for`) — golden PASS 4 shapes vs torch, **1.08–2.13× faster than the PyTorch reference**, sanitizer ×4 clean. Kernel: `tests/python/test_mla_decode_self.py`; data: `artifacts/perf/mla_decode_self.json`; dedicated repo: `zhaosiying12138/sm120-cutedsl-flashmla` |
 
 ### Self-stack verified so far (M4 complete)
 

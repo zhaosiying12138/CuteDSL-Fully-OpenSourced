@@ -289,6 +289,9 @@ class KernelEmitter:
     def store_gmem_f32(self, v: SSA, p: SSA) -> None:
         self.raw(f"llvm.store {v.name}, {p.name} : f32, !llvm.ptr<1>")
 
+    def store_gmem_f16(self, v: SSA, p: SSA) -> None:
+        self.raw(f"llvm.store {v.name}, {p.name} : f16, !llvm.ptr<1>")
+
     # -- TMA / mbarrier (M5) ----------------------------------------------------
     def mbarrier_ptr(self, name: str) -> SSA:
         """Declare an mbarrier (8B) in shared memory; returns ptr."""

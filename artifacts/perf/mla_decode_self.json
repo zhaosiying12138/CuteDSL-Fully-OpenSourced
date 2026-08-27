@@ -1,0 +1,54 @@
+{
+  "golden": [
+    {
+      "B": 1,
+      "S": 1024,
+      "H": 64,
+      "status": "PASS"
+    },
+    {
+      "B": 2,
+      "S": 2048,
+      "H": 64,
+      "status": "PASS"
+    },
+    {
+      "B": 1,
+      "S": 4096,
+      "H": 128,
+      "status": "PASS"
+    },
+    {
+      "B": 4,
+      "S": 512,
+      "H": 128,
+      "status": "PASS"
+    }
+  ],
+  "perf": [
+    {
+      "B": 1,
+      "S": 1024,
+      "H": 64,
+      "self_us": 45.8,
+      "torch_ref_us": 84.1,
+      "speedup_vs_torch": 1.84
+    },
+    {
+      "B": 1,
+      "S": 4096,
+      "H": 128,
+      "self_us": 101.5,
+      "torch_ref_us": 109.3,
+      "speedup_vs_torch": 1.08
+    },
+    {
+      "B": 2,
+      "S": 2048,
+      "H": 128,
+      "self_us": 100.6,
+      "torch_ref_us": 214.6,
+      "speedup_vs_torch": 2.13
+    }
+  ]
+}

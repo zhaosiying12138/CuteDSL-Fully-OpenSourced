@@ -128,7 +128,7 @@ class KernelInterpreter:
                 idx = self.eval(tgt.slice) if not isinstance(tgt.slice, ast.Tuple) else self.eval(tgt.slice)
                 val = self.eval(node.value)
                 if isinstance(base, _b.SmemArray):
-                    ety = "f16" if base.elem.name == "f16" else "f32"
+                    ety = "f16" if base.elem.name.lower() in ("f16", "float16") else "f32"
                     soff = getattr(base, "stage_offset", None)
                     if soff is not None:
                         idx = self.emitter.idx_binop("arith.addi", idx, soff)
@@ -389,9 +389,17 @@ class KernelInterpreter:
             return any(parts) if isinstance(node.op, ast.Or) else all(parts)
         if isinstance(node, ast.UnaryOp):
             v = self.eval(node.operand)
-            if isinstance(v, SSA) and isinstance(node.op, ast.USub):
-                zero = self.emitter.const_i32(0)
-                return self.emitter.ssa(v.type, f"arith.subi {zero.name}, {v.name} : {v.type}")
+            if isinstance(node.op, ast.USub):
+                if isinstance(v, SSA) and v.type == "f32":
+                    z = self.emitter.ssa("f32", "arith.constant 0.0 : f32")
+                    return self.emitter.ssa(
+                        v.type, f"arith.subf {z.name}, {v.name} : f32")
+                if isinstance(v, SSA):
+                    zero = self.emitter.const_i32(0)
+                    return self.emitter.ssa(
+                        v.type, f"arith.subi {zero.name}, {v.name} : {v.type}")
+                if isinstance(v, (int, float)):
+                    return -v
             if isinstance(node.op, ast.Not) and not isinstance(v, SSA):
                 return not v
             raise InterpError("unsupported unary op on this value")
@@ -500,9 +508,10 @@ class KernelInterpreter:
             off = getattr(base, "stage_offset", None)
             if off is not None:
                 i = self.emitter.idx_binop("arith.addi", i, off)
+            _f16 = base.elem.name.lower() in ("f16", "float16")
             p = self.emitter.gep_smem(base.ptr, i,
-                                      "f16" if base.elem.name == "f16" else "f32")
-            ty = "f16" if base.elem.name == "f16" else "f32"
+                                      "f16" if _f16 else "f32")
+            ty = "f16" if _f16 else "f32"
             return self.emitter.ssa(ty, f"llvm.load {p.name} : !llvm.ptr<3> -> {ty}")
         # meta-view objects (PartitionedMmaOperand, Tensor views, ...): defer
         # to their own __getitem__ so host algebra stays with the object
@@ -594,6 +603,7 @@ class KernelInterpreter:
         arith = {
             ast.Add: "arith.addi", ast.Sub: "arith.subi", ast.Mult: "arith.muli",
             ast.FloorDiv: "arith.divsi", ast.Mod: "arith.remsi",
+            ast.Div: "arith.divi",
         }.get(type(op))
         if arith is None:
             if isinstance(op, ast.Add) and not py_only:

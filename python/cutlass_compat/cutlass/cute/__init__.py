@@ -396,6 +396,26 @@ def make_fragment_like(part):
     return builtins.make_fragment_like(part)
 
 
+def const_f32(v):
+    from self_cutedsl.frontend import builtins
+    return builtins.const_f32(v)
+
+
+def exp_f32(v):
+    from self_cutedsl.frontend import builtins
+    return builtins.exp_f32(v)
+
+
+def fptrunc_f16(v):
+    from self_cutedsl.frontend import builtins
+    return builtins.fptrunc_f16(v)
+
+
+def fmax_f32(a, b):
+    from self_cutedsl.frontend import builtins
+    return builtins.fmax_f32(a, b)
+
+
 def make_rmem_tensor(shape, dtype):
     from self_cutedsl.frontend import builtins
 
@@ -570,6 +590,18 @@ def idx_to_i32(v):
     from self_cutedsl.frontend import builtins
 
     return builtins.idx_to_i32(v)
+
+
+def i32_to_index(v):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.i32_to_index(v)
+
+
+def min_i32(a, b):
+    from self_cutedsl.frontend import builtins
+
+    return builtins.min_i32(a, b)
 
 
 def mul_i32(a, b):
