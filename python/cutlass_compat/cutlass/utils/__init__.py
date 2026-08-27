@@ -169,6 +169,9 @@ class AlignSpec:
         self.alignment = int(alignment)
 
     def realize(self, name):
+        import os as _o
+        if _o.environ.get("DG_CLAMP_ALIGN"):
+            return self.inner.realize(name, alignment=128)
         return self.inner.realize(name, alignment=self.alignment)
 
 

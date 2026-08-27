@@ -26,12 +26,19 @@ def get_permutation_mnk(tile_shape_mnk, sf_vec_size, use_mxf8f6f4=False):
 
 
 def get_layoutSFA_TV(tiled_mma):
-    """Thread-value layout for SFA fragments (host descriptor)."""
-    return make_layout((4, 2, 1))
+    """Thread-value layout for SFA fragments (host descriptor); the operand
+    tag travels on the layout so the copy-site lowering knows A vs B."""
+    lay = make_layout((4, 2, 1))
+    lay._sf_operand = "A"
+    lay._tiled_mma = tiled_mma
+    return lay
 
 
 def get_layoutSFB_TV(tiled_mma):
-    return make_layout((4, 2, 1))
+    lay = make_layout((4, 2, 1))
+    lay._sf_operand = "B"
+    lay._tiled_mma = tiled_mma
+    return lay
 
 
 def partition_fragment_SFA(sSFA_view, thr_mma, tidx):

@@ -941,7 +941,7 @@ class AccumRetile:
 
     @property
     def shape(self):
-        return _r2s_shape(self.tc)
+        return _r2s_shape(self.tc, self.frag)
 
     @property
     def count(self):
@@ -966,11 +966,16 @@ def _r2s_grid(tc):
     return warp_m // am, warp_n // an
 
 
-def _r2s_shape(tc):
+def _r2s_shape(tc, frag=None):
     mma = getattr(tc, "mma", None)
     ak = getattr(getattr(mma, "op", None), "shape_mnk", (16, 8, 16))[2]
     mm, mn = _r2s_grid(tc)
-    return (8, mm // 2, mn) if ak >= 64 else (4, mm, mn)
+    # the leading value mode mirrors the accumulator's slot layout: the
+    # paired-atom FP4 grouping packs two physical M atoms into eight
+    # consecutive values; the atom-major layout keeps four per atom
+    paired = getattr(frag, "slot_order", None) == "paired8" or (
+        frag is None and ak >= 64)
+    return (8, mm // 2, mn) if paired else (4, mm, mn)
 
 
 def _blockscaled_warp_tile(mma):

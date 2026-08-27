@@ -97,6 +97,11 @@ class DriverJit:
         block = block or manifest.block
         packed = _pack_args(manifest, args)
         stream_obj = stream if stream is not None else cu.CUstream(0)
+        import os as _o3
+        if _o3.environ.get("DG_LAUNCH_DEBUG"):
+            import sys as _s3
+            _s3.stderr.write(f"[launch] {manifest.entry} grid={grid} "
+                             f"block={block} smem={manifest.dynamic_smem_bytes}\n")
         _check(
             cu.cuLaunchKernel(
                 func,

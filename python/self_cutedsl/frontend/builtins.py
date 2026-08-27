@@ -575,11 +575,21 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
         # the dimensions overlap and becomes an invalid descriptor once the
         # logical FP4/SF shapes are represented correctly.
         group_str = (strd[5] if strd and strd[5] else None) or rm * rm_str
-        recipe = TensorMapRecipe(dtype=_t.uint8,
-                                 shape=(l, rm, rk, 2, 256),
-                                 strides_elems=(group_str, rm_str, 512, 256, 1),
-                                 box=(256, 2, 2, 1, 1))
-        box = (256, 2, 2, 1, 1)
+        if l == 1:
+            # single batch: the group axis is physically size-1 — fold it
+            # out (unit stride violates TMA alignment); rank-4 legacy form
+            recipe = TensorMapRecipe(dtype=_t.uint8,
+                                     shape=(rm, rk, 2, 256),
+                                     strides_elems=(rm_str, 512, 256, 1),
+                                     box=(256, 2, 2, 1))
+            box = (256, 2, 2, 1)
+        else:
+            recipe = TensorMapRecipe(dtype=_t.uint8,
+                                     shape=(l, rm, rk, 2, 256),
+                                     strides_elems=(group_str, rm_str, 512,
+                                                    256, 1),
+                                     box=(256, 2, 2, 1, 1))
+            box = (256, 2, 2, 1, 1)
         logical_tile_sizes = (1, 2, 1)
         coord_kind = "scale_grouped"
     elif isinstance(gmem_tensor, (TensorMeta, HostTensor)):
@@ -607,6 +617,14 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
                 physical_shape[packed_axis] //= 8 // _w
             axes_slow_to_fast = tuple(
                 sorted(range(len(shp)), key=lambda axis: -strides[axis]))
+            # physical size-1 axes contribute no address space and their
+            # (arbitrary) unit stride violates the 16-byte global-stride
+            # alignment; fold them out of the descriptor and the coords
+            kept_axes = tuple(a for a in axes_slow_to_fast
+                              if physical_shape[a] != 1)
+            dropped = tuple(a for a in axes_slow_to_fast
+                            if physical_shape[a] == 1)
+            axes_slow_to_fast = kept_axes if kept_axes else axes_slow_to_fast[:1]
             recipe_shape = tuple(physical_shape[axis]
                                  for axis in axes_slow_to_fast)
             recipe_strides = tuple(strides[axis]
@@ -638,6 +656,7 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
     atom = TmaAtom(op, None, cta_layout or make_layout((1, 1)), smem_lay, box)
     atom.recipe = recipe
     atom.logical_tile_sizes = logical_tile_sizes
+    atom.dropped_axes = dropped if 'dropped' in dir() else ()
     atom.tma_coord_order = tma_coord_order
     atom.coord_kind = coord_kind
     atom.tma_view = _materialize_tma_view(recipe, gmem_tensor)
@@ -709,25 +728,21 @@ def _ixop(e, op, a, b):
 
 
 def _warp_mn_coord(e, mma, wid, warps_m, warps_n):
-    # SM120 block-scaled fragments enumerate N warps first; the f16 tiled
-    # MMA used by dense_gemm enumerates M warps first.
-    ak = getattr(getattr(mma, "op", None), "shape_mnk", (16, 8, 16))[2]
-    if ak >= 64:
-        wm = _ixop(e, "arith.divsi", wid, _ix(e, warps_n))
-        wn = _ixop(e, "arith.remsi", wid, _ix(e, warps_n))
-    else:
-        wm = _ixop(e, "arith.remsi", wid, _ix(e, warps_m))
-        wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
+    # Unified rule (column-major CuTe semantics): mode-0 (M) is the fast
+    # warp coordinate for every tiled-MMA layout — blockscaled (4,2),
+    # b12x (2,2), and the f16 dense path all enumerate M warps first.
+    wm = _ixop(e, "arith.remsi", wid, _ix(e, warps_m))
+    wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
     return wm, wn
 
 
 def _lane0_predicate():
-    """i1 SSA: one convergently elected issuer per warp."""
+    """i1 SSA: lane-0 predicate, safe under divergence (elect.sync traps
+    when reached by a partial warp)."""
     e = _emitter()
-    return e.ssa(
-        "i1",
-        'nvvm.inline_ptx "elect.sync _|$0, 0xffffffff;" -> i1',
-    )
+    tid = e.thread_id("x")
+    lane = e.idx_binop("arith.remsi", tid, e.ssa("index", "arith.constant 32 : index"))
+    return e.cmpi_slt_const(lane, 1)
 
 
 def _is_swizzle_128b(swizzle):
@@ -989,7 +1004,8 @@ def copy_r2s(tc, src, dst):
                              _ix(e, na * 8))
             for j in range(4):
                 c0 = ((i // 2) * mn + na) * 8 + (i % 2) * 4 + j \
-                    if ak >= 64 else (i * mn + na) * 4 + j
+                    if getattr(frag, "slot_order", "atom4") == "paired8" \
+                    else (i * mn + na) * 4 + j
                 v = frag.slots.get(c0)
                 if v is None:
                     continue
@@ -1042,9 +1058,15 @@ def copy_sf(tc, src, dst):
     rows = 1
     for dimension in _flatten(top_shape[0]):
         rows *= int(dimension)
-    stages = int(top_shape[-1]) if len(top_shape) >= 3 else 1
-    bytes_per_stage = int(arr.count) // max(1, stages)
-    kgs = max(1, bytes_per_stage // rows)
+    # k-groups per stage come from the LAYOUT's second mode (the staged
+    # window is one stage of the array); deriving from total bytes would
+    # collapse the stage dimension and break the stage window
+    _flat2 = _flatten(top_shape[1]) if len(top_shape) > 1 else (1,)
+    kgs = 1
+    for _d in _flat2:
+        kgs *= int(_d)
+    kgs = max(1, kgs)
+    stages = max(1, int(arr.count) // max(1, rows * kgs))
     # Canonical SM120 SF storage pads the M block to 128 rows even when the
     # live micro CTA tile is 64 rows; consecutive K64 blocks remain 512 B apart.
     sf_storage_rows = max(128, rows)
@@ -1053,11 +1075,23 @@ def copy_sf(tc, src, dst):
     tidx = _ix(e, tc.tidx)
     lane = _ixop(e, "arith.remsi", tidx, _ix(e, 32))
     wid = _ixop(e, "arith.divsi", tidx, _ix(e, 32))
-    # The SM120 tiled MMA uses atom_layout=(2,2,1), whose compact
-    # row-major layout makes N the fast warp coordinate.
-    wm = _ixop(e, "arith.divsi", wid, _ix(e, 2))
-    wn = _ixop(e, "arith.remsi", wid, _ix(e, 2))
+    # warp roles follow the mma atom layout: CuTe layouts are
+    # column-major by mode order, so mode-0 (M) is the fast warp
+    # coordinate — wm = wid % M_warps (blockscaled (4,2) and b12x (2,2)
+    # share the rule)
     mma = getattr(tc, "_tiled_mma", None)
+    m_warps = 2
+    if mma is not None:
+        _al = getattr(mma, "atom_layout", None)
+        _al_shape = getattr(_al, "shape", _al) if _al is not None else None
+        try:
+            _fl = _flatten(_al_shape) if _al_shape else ()
+            m_warps = int(_fl[0]) if _fl else 2
+        except Exception:
+            m_warps = 2
+    m_warps = max(1, m_warps)
+    wm = _ixop(e, "arith.remsi", wid, _ix(e, m_warps))
+    wn = _ixop(e, "arith.divsi", wid, _ix(e, m_warps))
     warp_m = _blockscaled_warp_tile(mma)[0] if mma is not None else 64
 
     which = getattr(tc, "which", None)
@@ -1189,6 +1223,7 @@ def gemm_bs(mma, acc, a_list, b_list):
             r = e.mma_mxf4nvf4(a4, b2, sa1, sb1, c4)
             for j in range(4):
                 acc_holder.slots[acc_base + c0 + j] = r[j]
+    acc_holder.slot_order = "atom4"
 
 
 def gemm_bs_atom(mma, acc, a_list, b_list):
@@ -1231,6 +1266,7 @@ def gemm_bs_atom(mma, acc, a_list, b_list):
     for inner_m, (_, _, result) in enumerate(results):
         for index, value in enumerate(result):
             holder.slots[base + inner_m * 4 + index] = value
+    holder.slot_order = "paired8"
 
 
 def tma_partition(atom, cta_coord, cta_layout, smem_grouped, gmem_grouped):
@@ -1302,17 +1338,22 @@ def tma_copy_partitioned(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):
         return e.ssa("i32", f"arith.muli {v32.name}, {c.name} : i32")
 
     if getattr(atom, "coord_kind", None) == "scale_grouped":
-        # SF rank-5 recipe: (group, rm, rk, 2, 256), with the two blocked
-        # inner modes addressed at zero and the expert/group coordinate last.
+        # SF recipe: (rm, rk, 2, 256) rank-4 when the batch axis folded,
+        # (l, rm, rk, 2, 256) rank-5 when grouped; coords follow the rank
+        rank = len(getattr(atom, "recipe", None).shape
+                   ) if getattr(atom, "recipe", None) else 4
         coords = [_elem("d1", 2), _elem("d0", 1)]
         coords = [e.ssa("i32", "arith.constant 0 : i32"),
-                  e.ssa("i32", "arith.constant 0 : i32")] + coords + \
-                 [_elem("d2", 1)]
+                  e.ssa("i32", "arith.constant 0 : i32")] + coords
+        if rank == 5:
+            coords = coords + [_elem("d2", 1)]
     else:
         tile_sizes = tuple(getattr(atom, "logical_tile_sizes", (box[1], box[0])))
+        dropped = set(getattr(atom, "dropped_axes", ()))
         coords = [
             _elem(f"d{axis}", tile_sizes[axis])
             for axis in getattr(atom, "tma_coord_order", (1, 0))
+            if axis not in dropped
         ]
     desc = getattr(atom, "desc_ssa", None)
     if desc is None:
