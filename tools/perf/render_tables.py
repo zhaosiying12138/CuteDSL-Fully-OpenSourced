@@ -37,7 +37,7 @@ PERF = ROOT / "artifacts/perf"
 FAMILIES = [
     ("elementwise", "elementwise_add (FP32, Ampere demo)"),
     ("dense_gemm", "dense_gemm (FP16, tile 64x64x64)"),
-    ("blockscaled_gemm", "blockscaled GEMM (NVFP4 coop, tile 128x128x128)"),
+    ("blockscaled", "blockscaled GEMM (NVFP4 coop, tile 128x128x128)"),
     ("norm_rmsnorm_fp4quant", "flashinfer rmsnorm_fp4quant (FP16->NVFP4)"),
     ("norm_add_rmsnorm_fp4quant", "flashinfer add_rmsnorm_fp4quant"),
     ("b12x_moe", "flashinfer b12x fused MoE (W4A16 NVFP4)"),
@@ -45,7 +45,7 @@ FAMILIES = [
 
 LEGACY_OUT = {
     "dense_gemm": "dense_gemm_verbatim.json",
-    "blockscaled_gemm": "blockscaled_verbatim.json",
+    "blockscaled": "blockscaled_verbatim.json",
 }
 
 

@@ -156,9 +156,47 @@ def size(x, mode=None):
 
 # ------------------------------------------------------------ tensor utils
 def zipped_divide(m, tiler=None):
-    from self_cutedsl.frontend.meta import zipped_divide as _m
+    """cute.zipped_divide — historical dual-family contract.
 
-    return _m(m, tiler)
+    Object-model inputs tile through the cute_objects layout algebra (the
+    verbatim flagship kernels subscript the returned Layout directly);
+    inputs the algebra cannot tile (TensorMeta host metas with dynamic
+    rest-modes, as produced by the dense_gemm/b12x hosts) pass through
+    unchanged and rely on their own subscript machinery. The ampere
+    elementwise demo additionally prints `.type` on the tiled result, so
+    cute_objects.Layout carries a display-only `type` property.
+    """
+    from self_cutedsl.frontend import cute_objects as co
+    from self_cutedsl.frontend.meta import (
+        CoordinateTensorMeta,
+        TensorMeta,
+        zipped_divide as _meta_zd,
+    )
+
+    if isinstance(m, CoordinateTensorMeta):
+        # identity/coordinate tensors keep their meta tiled form — kernels
+        # index them for predicates (cute.elem_less on coordinate values)
+        return m.tiled(_flatten_shape2(tiler))
+    if isinstance(m, TensorMeta):
+        # host metas keep tensor identity: kernels wrap them as KernelTensor
+        # with tiled metas (ampere canonical-partition path). Object-model
+        # kernels that consumed bare Layouts reach the co route below via
+        # their non-meta inputs.
+        return _meta_zd(m, tiler)
+    try:
+        return co.zipped_divide(m, tiler)
+    except (AttributeError, TypeError, ValueError):
+        return m
+
+
+def _flatten_shape2(tiler):
+    from self_cutedsl.frontend.cute_objects import _flatten
+
+    try:
+        flat = _flatten(tiler)
+        return (int(flat[0]), int(flat[1]))
+    except Exception:
+        return (int(tiler[0]), int(tiler[1]))
 
 
 def make_identity_tensor(shape):
@@ -281,6 +319,15 @@ def copy(atom, src, dst, pred=None, **kw):
     )
     if isinstance(atom, _CpAsyncAtom):
         copy_cpasync(atom, src, dst, pred)
+        return
+    from self_cutedsl.frontend.kernel_objects import Fragment, ThrPartition
+
+    if isinstance(atom, _UniversalAtom) and (
+            (isinstance(src, ThrPartition) and isinstance(dst, Fragment)) or
+            (isinstance(src, Fragment) and isinstance(dst, ThrPartition))):
+        # canonical M2 tiled copy (ampere elementwise demo): partition ->
+        # fragment with a per-lane predicate fragment
+        builtins.copy(atom, src, dst, pred)
         return
     if isinstance(atom, _UniversalAtom):
         copy_universal(atom, src, dst, pred)
@@ -998,10 +1045,8 @@ def local_tile(m, tiler, coord):
     return co._select_rest(tiled, coord)
 
 
-def zipped_divide(m, tiler=None):
-    from self_cutedsl.frontend import cute_objects as co
-
-    try:
-        return co.zipped_divide(m, tiler)
-    except (AttributeError, TypeError, ValueError):
-        return m
+# NOTE: an earlier revision of this file carried a second `zipped_divide`
+# definition here that shadowed the dispatcher above (it routed everything
+# through cute_objects and silently returned the input on layout errors),
+# which broke TensorMeta inputs from the ampere elementwise demo. The single
+# dispatcher at the top of this module is authoritative.

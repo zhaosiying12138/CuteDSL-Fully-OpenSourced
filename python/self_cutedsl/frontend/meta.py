@@ -185,15 +185,28 @@ class TiledTensorMeta:
 
     def __init__(self, base: TensorMeta, tiler):
         self.base = base
-        self.tile = (int(tiler[0]), int(tiler[1]))
+        tile = tuple(int(t) for t in tiler)
+        # pad unit tiles for trailing modes (3-D mnl tensors with a 2-mode
+        # tiler keep their L rest mode)
+        while len(tile) < len(base.shape):
+            tile = tile + (1,)
+        self.tile = tile
         rest = [-(-s // t) for s, t in zip(base.shape, self.tile)]  # ceil div
         self.rest = tuple(rest)
-        self.shape = (self.tile, self.rest)
+        self.shape = (self.tile[:2], self.rest)
 
     @property
     def type(self) -> str:
         return (f"cutlass.Tensor(element={self.base.element_type.name}, "
                 f"tile={self.tile}, rest={self.rest})")
+
+    def __getitem__(self, idx):
+        if isinstance(idx, tuple) and len(idx) == 2 and \
+                isinstance(idx[1], (tuple, list)):
+            # (tile_group_k, (None,..,None)) — dense_gemm grid idiom
+            return _RestModes(self.rest)
+        raise TypeError(
+            f"TiledTensorMeta subscript {idx!r} unsupported outside kernels")
 
 
 class CoordinateTensorMeta:
@@ -226,6 +239,20 @@ def zipped_divide(m, tiler):
     if isinstance(m, CoordinateTensorMeta):
         return m.tiled(_flatten(tiler)[:2])
     return TiledTensorMeta(m, _flatten(tiler)[:2])
+
+
+class _RestModes:
+    """gc[(k, (None, ..., None))] — tile group selected, rest modes kept.
+
+    The dense_gemm host grid idiom reads `.shape` off this to obtain the
+    CTA counts per mode.
+    """
+
+    def __init__(self, rest):
+        self.shape = tuple(rest)
+        self.size = 1
+        for r in self.shape:
+            self.size *= r
 
 
 def make_identity_tensor(shape) -> CoordinateTensorMeta:

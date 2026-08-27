@@ -65,6 +65,13 @@ class Layout:
     def __repr__(self):
         return f"Layout({_render(self.shape)}:{_render(self.stride)})"
 
+    @property
+    def type(self):
+        # Display-only mirror of the official IR attribute; kernels print
+        # `{tiled.type}` in their DSL INFO banners (ampere elementwise demo).
+        return f"cutlass.Layout(shape={_render(self.shape)}, " \
+               f"stride={_render(self.stride)})"
+
     def __getitem__(self, i):
         if isinstance(i, tuple) and len(i) == 2 and isinstance(i[1], (tuple, list)) \
                 and isinstance(self.shape, tuple) and len(self.shape) == 2 \

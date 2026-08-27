@@ -213,14 +213,16 @@ def elem_less(coord, shape):
 
 
 def copy(atom, src, dst, pred=None):
-    """cute.copy(atom, src, dst, pred=frag) — per-value predicated ld/st."""
+    """cute.copy(atom, src, dst, pred=frag) — M2 per-value predicated ld/st.
+
+    NOTE: a second `copy` definition further down this module (TMA
+    partitioned dispatch) is the one Python actually binds; it forwards
+    ThrPartition/Fragment pairs back to _copy_g2r/_copy_r2g. Kept for
+    readability of the M2 paths; the authoritative entry is the last def.
+    """
     from .kernel_objects import Fragment, ThrPartition
 
     e = _emitter()
-    _t = type(atom).__name__
-    if _t == "_SF_copy":                 # SF smem->rmem (blockscaled)
-        copy_sf(atom, src, dst)
-        return
     if isinstance(src, ThrPartition) and isinstance(dst, Fragment):
         _copy_g2r(e, src, dst, pred)
     elif isinstance(src, Fragment) and isinstance(dst, ThrPartition):
@@ -1393,8 +1395,10 @@ def tma_copy_partitioned(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):
 
 
 def copy(atom_or_view, *rest, mbarrier=None, pred=None):
-    """cute.copy dispatch: TMA partitioned pair -> cp.async.bulk.tensor."""
+    """cute.copy dispatch: TMA partitioned pair -> cp.async.bulk.tensor;
+    canonical M2 partition/fragment pairs -> per-value predicated ld/st."""
     from .cute_objects import TmaPartitioned, TmaAtom
+    from .kernel_objects import Fragment, ThrPartition
 
     e = _emitter()
     if isinstance(atom_or_view, TmaPartitioned):
@@ -1411,6 +1415,15 @@ def copy(atom_or_view, *rest, mbarrier=None, pred=None):
             raise ValueError("partitioned copy needs desc_ptr (set by kernel glue)")
         e.tma_load(smem, desc, mbarrier, coords)
         return
+    if len(rest) >= 2:
+        src, dst = rest[0], rest[1]
+        _pred = rest[2] if len(rest) > 2 else pred
+        if isinstance(src, ThrPartition) and isinstance(dst, Fragment):
+            _copy_g2r(e, src, dst, _pred)
+            return
+        if isinstance(src, Fragment) and isinstance(dst, ThrPartition):
+            _copy_r2g(e, src, dst, _pred)
+            return
     raise NotImplementedError(f"copy on {type(atom_or_view)}")
 
 
