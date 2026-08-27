@@ -40,8 +40,10 @@ All commands run from the repository root.
 #     ~30–60 min on a 24-core machine. Override parallelism: LLVM_BUILD_JOBS=16.
 tools/build_pinned_llvm.sh
 
-# (2) cutlass_compiler (BSD-3) + the selfcute dialects, against build-llvm/.
-#     Produces build-compiler/tools/cutlass-compiler/cutlass-compiler.
+# (2) cutlass_compiler (BSD-3) against build-llvm/, PLUS the selfcute
+#     dialect skeletons and their LIT suite (build-selfcute/).
+#     Produces build-compiler/tools/cutlass-compiler/cutlass-compiler and
+#     build-selfcute/selfcute-opt (check-selfcute-lit runs from there).
 tools/build_compiler.sh
 
 # (3) The in-process cutegen type oracle (nanobind binding over the vendored

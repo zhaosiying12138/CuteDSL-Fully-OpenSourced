@@ -27,7 +27,7 @@ $PY -m pytest -m sm120 -q || fail=1
 
 echo
 echo "=== [3/3] selfcute dialect LIT (ninja check-selfcute-lit) ==="
-ninja -C build-compiler check-selfcute-lit || fail=1
+ninja -C build-selfcute check-selfcute-lit || fail=1
 
 echo
 if [[ $fail -ne 0 ]]; then

@@ -21,7 +21,17 @@ cmake -G Ninja -S third_party/cutlass/cutlass_compiler -B build-compiler \
 
 ninja -C build-compiler cute-opt base-opt cutlass-compiler
 
+# The selfcute dialect skeletons + their LIT suite build from compiler/ into
+# their own tree (check-selfcute-lit lives HERE, not in build-compiler).
+cmake -G Ninja -S compiler -B build-selfcute \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_DIR="$ROOT/build-llvm/lib/cmake/llvm" \
+    -DMLIR_DIR="$ROOT/build-llvm/lib/cmake/mlir" \
+    -DLLVM_ENABLE_ASSERTIONS=ON
+ninja -C build-selfcute selfcute-opt check-selfcute-lit
+
 echo "[build_compiler] done. Tools:"
 echo "  build-compiler/cute_ir/tools/cute-opt/cute-opt"
 echo "  build-compiler/base/tools/base-opt/base-opt"
 echo "  build-compiler/tools/cutlass-compiler/cutlass-compiler"
+echo "  build-selfcute/selfcute-opt/selfcute-opt   (+ check-selfcute-lit)"
