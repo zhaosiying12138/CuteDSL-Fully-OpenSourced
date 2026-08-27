@@ -1,241 +1,132 @@
-# CuTeDSL-Fully-OpenSourced — SM120 Compatibility Profile
+# CuteDSL-Fully-OpenSourced
 
-A fully open-sourced software stack that compiles **CuTeDSL-style Python** to
-**`sm_120a` PTX** and runs it on an **RTX 5090 Laptop GPU** (GeForce Blackwell,
-compute capability 12.0), with **no proprietary compiler in the path**:
+**[English](README_EN.md)**
+
+从 Python `@cute.jit` 前端到 `sm_120a` PTX 的**完全开源** CuTeDSL 兼容编译器栈：官方 CUTLASS 示例内核与 flashinfer 算子**零修改**编译并在 RTX 5090 Laptop 上运行，全路径只由 BSD/Apache 许可的源码与我们自己的代码构成——没有 `_cutlass_ir`、没有 nvcc/NVRTC/ptxas、没有官方闭源 wheel。
+
+在 5090 Laptop 实测中，六个具备官方 CuTeDSL 对照的算子族（逐族按 shape 取均值后再跨族算术平均）达到官方闭源实现的 **83%**（本轮捕获 82.8%；共享 GPU 下两轮正式捕获区间 73.5%–82.8%，条件随数据记录；详见[性能总表](#5-性能)与 `artifacts/perf/summary.md`）。
+
+> **开源边界**：从 Python API 到 textual PTX 全部开源（BSD-3）。PTX 在运行时交给 CUDA 驱动的 JIT——驱动、SASS 生成与 GPU 固件仍是 NVIDIA 专有的（与任何 CUDA 程序相同）。
+
+## 1. 范围声明（请先读）
+
+- **仅支持 `sm_120a`**（GeForce Blackwell / RTX 5090 系），且**仅在该 GPU 上实测**。其他架构（SM80/90/100、AMD、CPU）明确拒绝，未做任何承诺。
+- 通过的算子列在[算子矩阵](#6-支持算子矩阵)；**矩阵之外的算子不承诺可编译或可运行**，泛化性工作仍在进行（见[已知限制](#8-已知限制与路线图)）。
+- 我们的实现对官方算子源码**零修改**：所有修复都发生在我们自己的编译器层，绝不改算子。
+- 性能数据为共享 GPU 环境下捕获（条件随每个 JSON 记录：利用率/时钟/功率）；独占 GPU 时可用 `tools/perf/run_all_perf.sh` 一键重测。
+
+## 2. 栈结构
 
 ```
-Python (CuTeDSL-compatible API)          [this repo: python/self_cutedsl]
-        │  AST rewrite + tracing + partial evaluation
+Python @cute.jit / @cute.kernel            ← 本仓库前端（AST 解释 + 部分求值）
+        │  算子源码零修改（官方 demo / flashinfer）
         ▼
-public "cute" MLIR dialect (layout algebra)   [BSD, cutlass_compiler]
-   + selfcute.kernel / selfcute.pipeline / selfcute.sm120   [this repo]
-        │
+textual MLIR: cute / arith / scf / gpu / llvm / nvvm   ← 本仓库发射层
+        │  cutegen in-process 类型 oracle（BSD，与 cute dialect 同一类型引擎）
         ▼
-arith / scf / gpu / LLVM IR / NVVM
-        │
+cutlass-compiler (BSD-3): --one-shot-convert-to-llvm
+        │  --attach-nvvm-target=chip=sm_120a --emit-gpu-binary
         ▼
-textual PTX (.target sm_120a, PTX ISA 8.7)   [open LLVM NVPTX backend]
-        │
+textual PTX (sm_120a, PTX ISA 8.7)         ← 开源 LLVM NVPTX 后端
         ▼
-CUDA Driver JIT (cuModuleLoadDataEx) + launch [this repo: runtime/]
+CUDA Driver JIT (cuModuleLoadDataEx)       ← 本仓库 runtime；全程无 ptxas
 ```
 
-**Open-source boundary**: everything from the Python API down to textual PTX is
-open (BSD-3). PTX is handed to the CUDA driver's JIT at runtime — the driver,
-SASS generation, and GPU firmware remain NVIDIA-proprietary (as with any CUDA
-program).
+闭源缺口的补齐方式见[第 7 节](#7-闭源缺口的补齐)。反作弊断言：`tools/verify_open_stack.py`（官方组件不可导入、无 nvcc/ptxas/NVRTC）与 `tools/inspect_ptx.py`（PTX 目标/入口/MMA 审计）。
 
-## Target profile (strictly enforced)
+## 3. 构建
 
-| Item | Value |
-|---|---|
-| GPU | NVIDIA GeForce RTX 5090 Laptop |
-| Compute capability | 12.0 (GeForce Blackwell) |
-| PTX target | `sm_120a` only |
-| PTX ISA | 8.7+ |
-| Output | textual PTX, JIT'd via CUDA Driver API |
-
-Other architectures (SM80/89/90/100/103/121, AMD, CPU), fatbin generation,
-multi-architecture builds, WGMMA/tcgen05/TMEM, nvcc/NVRTC/ptxas/libNVVM
-fallbacks are **out of scope and rejected by the compiler**.
-
-## Building (quick start)
-
-> Detailed, lock-step instructions are maintained in
-> [`docs/BUILD.md`](docs/BUILD.md). The versions below are pinned by the
-> toolchain lock in `compat/sm120_toolchain.lock.yaml`.
-
-### Prerequisites
-
-- Linux x86_64 (tested: WSL2, Ubuntu)
-- Python 3.12
-- NVIDIA driver ≥ 580 (CUDA 13.x userspace) with the target GPU exposed
-- CUDA toolkit 13.x (headers/libs for the Driver API; **not** used to compile)
-- CMake ≥ 3.24, Ninja, C++17 compiler, ~30 GB free disk
-
-### 1. Build the pinned LLVM/MLIR
-
-The compiler builds against the exact `llvm-project` revision pinned by the
-vendored `cutlass_compiler` (see `third_party/cutlass/cutlass_compiler/LLVM_COMMIT`):
+前置依赖与逐步指南见 **[docs/BUILD.md](docs/BUILD.md)**。概览：
 
 ```bash
-./tools/build_pinned_llvm.sh          # builds llvm+mlir with NVPTX into build-llvm/
+tools/build_pinned_llvm.sh        # 锁定 LLVM 23a60f15（cutlass_compiler 要求的精确版本）
+tools/build_compiler.sh           # BSD cutlass_compiler + selfcute dialects
+tools/cutegen_oracle/build.sh     # in-process cutegen 类型 oracle（nanobind）
+tools/make_envs.sh                # .venv-reference（官方基线）/ .venv-self（本栈）
+.venv-self/bin/pip install nanobind
+tools/fetch_third_party.sh        # flashinfer @ 9d33a28e（verbatim 算子语料）
 ```
 
-### 2. Build the compiler stack
+## 4. 正确性复现
 
 ```bash
-./tools/build_compiler.sh             # builds cutlass_compiler + selfcute dialects
+tools/run_correctness.sh
 ```
 
-### 3. Set up Python environments
+期望输出：**259 passed, 0 failed**（宿主/编译器测试 + 5090 golden + selfcute LIT）。其中包含：
 
-Two isolated environments (this is also how compatibility is validated):
+- 官方算子 verbatim golden：dense_gemm、blockscaled NVFP4、Ampere elementwise、flashinfer rmsnorm/add-rmsnorm/b12x MoE；
+- cutegen oracle 与 cute dialect verifier 的**生成式差分护栏**（`test_layout_oracle_differential`：45 个含动态 `?` 与嵌套 mode 的布局 × 4 个代数 op，双 oracle 逐字符一致）；
+- **shape-polymorphic 策略测试**（`test_dynamic_shape_policy`：被标记 tensor 的三个长度共享一份编译计划且结果精确）。
 
-```bash
-./tools/make_envs.sh                  # creates .venv-reference (official wheel) and .venv-self
-```
+PTX 审计（可选）：`DG_DUMP_PTX=1` 跑任意负载后执行 `tools/inspect_ptx.py`。
 
-`reference-env` contains the **official** `nvidia-cutlass-dsl` wheel and is used
-*only* to capture frozen baseline results. `self-env` never installs any
-proprietary compiler component; all self-stack development and validation runs
-there.
+## 5. 性能
 
-### 4. Run tests
+同一份**未修改**算子源码在两个环境各跑一遍（本栈 vs 官方 `nvidia-cutlass-dsl==4.7.0` wheel），`tools/perf/run_all_perf.sh` 产出合并表格与头条均值：
 
-```bash
-source .venv-self/bin/activate
-pytest -m "not sm120"                 # CPU-side: frontend, IR, PTX FileCheck
-pytest -m sm120                       # on-GPU: requires the RTX 5090
-ninja -C build-compiler check-selfcute-lit
-python tools/run_sm120_validation.py \
-    --manifest compat/sm120_reference.lock.yaml \
-    --output artifacts/sm120-results.json
-```
+| 算子族 | 官方对照 | 达到官方 |
+|---|---|---|
+| elementwise add（FP32，Ampere demo，3 shapes） | ✓ | 113% |
+| dense GEMM（FP16，tile 64×64×64，3 shapes） | ✓ | 101% |
+| blockscaled GEMM（NVFP4 coop，tile 128×128×128，3 shapes） | ✓ | 62% |
+| flashinfer rmsnorm_fp4quant（3 shapes） | ✓ | 69% |
+| flashinfer add_rmsnorm_fp4quant（3 shapes） | ✓ | 80% |
+| flashinfer b12x fused MoE（W4A16 NVFP4，3 configs） | ✓ | 71% |
+| **六族算术平均** | | **83%** |
 
-## Tested operators
+- 完整逐 shape 数据（µs / GB/s / TFLOP·s⁻¹ / 每次捕获的 GPU 状态）：`artifacts/perf/summary.md` 与 `artifacts/perf/*.json`；
+- 社区参考列（torch eager / torch.compile / cuBLAS）：`tools/perf/bench_torch_baselines.py` → `artifacts/perf/community_baselines.json`；
+- FlashMLA decode（自研 sm120 warp-mma 数学核；官方 CuTeDSL 在 sm_120a 上无此算子）：1.08–2.13× vs PyTorch 参考，见 [sm120-cutedsl-flashmla](https://github.com/zhaosiying12138/sm120-cutedsl-flashmla)。
 
-Results are updated as milestones complete. "Self PASS" means: the unmodified
-upstream source, at the pinned commit recorded in
-`compat/sm120_reference.lock.yaml`, compiled and executed **entirely by this
-stack** on the RTX 5090, with reference checks enabled. "Official PASS" means
-the same source passed in the frozen official reference environment (M0
-baseline evidence in `artifacts/reference/results.json`).
+## 6. 支持算子矩阵
 
-### Status: M7 complete — blockscaled (NVFP4) cooperative runs UNMODIFIED (2026-08-27)
-
-The flagship `dense_blockscaled_gemm_persistent_cooperative.py` (NVFP4:
-f4×f4 + e4m3 scale factors, sv=16, warp-level `mma.sync
-kind::mxf4nvf4.block_scale.scale_vec::4X`) compiles and runs **unmodified**
-through the self stack with golden checks (`tests/python/test_blockscaled_verbatim.py`):
-
-| Shape | Official TF/s | Self TF/s | Ratio |
+| 算子 | 来源（未修改，vendored commit） | 正确性 | 备注 |
 |---|---|---|---|
-| 1024³ | 101 | 39.7 | 39% |
-| 1024×4096×4096 | 501 | 162 | 32% |
-| 4096³ | 610 | **411.5** | **67%** |
+| dense GEMM (FP16) | [CUTLASS dense_gemm.py](https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/dense_gemm/dense_gemm.py) @ `7107b055` | golden PASS | tile 64×64×64 全 shape 矩阵 |
+| blockscaled GEMM (NVFP4) | [dense_blockscaled_gemm_persistent_cooperative.py](https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/cute/blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py) @ `7107b055` | golden PASS | sv=16；sv=32（MXFP4）为已知边界 |
+| elementwise add (FP32) | [elementwise_add.py](https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/cute/ampere/kernel/elementwise/elementwise_add.py) @ `7107b055` | golden PASS | |
+| rmsnorm + FP4 量化 | [flashinfer rmsnorm_fp4quant.py](https://github.com/flashinfer-ai/flashinfer/blob/main/flashinfer/cute_dsl/rmsnorm_fp4quant.py) @ `9d33a28e` | golden PASS（FP4/SF 精确） | |
+| add-rmsnorm + FP4 量化 | [add_rmsnorm_fp4quant.py](https://github.com/flashinfer-ai/flashinfer/blob/main/flashinfer/cute_dsl/add_rmsnorm_fp4quant.py) @ `9d33a28e` | golden PASS | |
+| b12x fused MoE（W4A16 NVFP4） | [b12x_moe.py](https://github.com/flashinfer-ai/flashinfer/blob/main/flashinfer/fused_moe/cute_dsl/b12x_moe.py) + [blackwell_sm12x/](https://github.com/flashinfer-ai/flashinfer/tree/main/flashinfer/fused_moe/cute_dsl/blackwell_sm12x) @ `9d33a28e` | golden PASS（静态/micro/动态路由） | |
+| MLA decode（自研） | [sm120-cutedsl-flashmla](https://github.com/zhaosiying12138/sm120-cutedsl-flashmla) | golden PASS 4 shapes | sm120 warp-mma 改写，非 verbatim |
 
-Honest boundaries: sv=32 (mxfp4/e8m0 SF) hangs (kernel deadlock); unaligned
-boundary shapes fail the host tensor-alignment precheck. Full per-kg scale
-semantics verified by direct constant-SFA SASS experiments (see DEVLOG
-2026-08-26(7)/(8) and the hand-PTX oracle: lane j scales k-group j).
+## 7. 闭源缺口的补齐
 
-### Status: S5 complete — dense_gemm.py runs UNMODIFIED (2026-08-26)
+官方 CuTeDSL 的关键闭源件是 `_cutlass_ir`/`cute_nvgpu` 扩展与 wheel 内私有逻辑。我们的对应实现：
 
-The flagship `blackwell_geforce/dense_gemm.py` now compiles and runs
-**unmodified** end to end on the self stack (Python trace → cute/MLIR →
-cutlass-compiler passes → PTX → Driver JIT → RTX 5090), golden-checked
-against torch einsum (`tests/python/test_dense_gemm_verbatim.py`):
+- **前端**：自己的 AST 解释器 + 部分求值（`python/self_cutedsl/frontend/`）——官方装饰器、嵌套 jit、动态 launch grid、编译后标量重绑定；
+- **cute_nvgpu 替代**：结构化 NVVM op + `nvvm.inline_ptx` 桥（elect.sync / shfl / cp.async / TMA multicast / mbarrier 自旋等待 / setmaxnreg / mxf4nvf4 mma 等）；
+- **动态 shape/layout，三层**：
+  - (a) trace 期特化 + **可 opt-in 的 shape-polymorphic 策略**——`mark_layout_dynamic` 真实生效：标记维度退出特化 key、按维度注入运行时标量通道，多 shape 共享一份 PTX（对照测试见 `test_dynamic_shape_policy`）；
+  - (b) 运行时标量以 SSA i32 进入 kernel ABI（动态 `scf.for` / TMA 坐标 / launch grid）；
+  - (c) 对象模型路径以 `?` 动态叶子发射 cute dialect op，**类型推理由 in-process cutegen oracle 完成**——与 cute dialect 及官方闭源 `.so` 使用同一个 BSD 类型引擎，差分护栏保证与 dialect verifier 逐字符一致，单次推理 3.15ms→0.056ms（56×）；
+- **TMA**：`cuTensorMapEncodeTiled` 运行时编码（绝不手写 CUtensorMap 位域）；
+- **官方 wheel 仅存在于 `.venv-reference`**，只作基线对照，从不进入本栈路径。
 
-| Config (tile 64×64×64) | Result |
-|---|---|
-| 128×128×128 (example default, official tolerance 0.01) | ✅ PASS |
-| 4104×2056×512 (boundary, OOB tiles) | ✅ PASS — 95% of official throughput |
-| 128×256×128 / 256×256×128 | ✅ PASS (atol 0.05: f16 ULP at these magnitudes) |
-| 128×128×256 (4 k-tiles, double stage wrap) | ✅ PASS |
+## 8. 已知限制与路线图
 
-Honest boundaries (general properties, not shape special-cases):
-- `tile_m=128` exceeds SMEM (the official runner skips this config too);
-- `tile_n=128` needs the multi-epi-tile r2s addressing (single-pass
-  epilogue today);
-- oversubscribed persistent grids (more tiles than CTAs) need `scf.while`
-  in the tracer — grid-covering persistent runs trace single-trip.
+- **blockscaled sv=32（MXFP4）**：死锁，诚实边界；unaligned 边界 shape 被宿主对齐预检查拒绝；
+- **动态叶子身份**：cutegen 默认动态语义是匿名的（结果 `?` 全部经 property-policy 算术新建）；身份保持需要官方 `.so` 实现的 mlir_dynamic 式发射后端（约 600 行特化面）——这是闭源边界中除 tiled_mma/thrfrg 之外的另一个精确位置；本栈的动态身份由 (b) 层标量通道承担；
+- **代数类型规则完全收敛**：composition/coalesce/flatten/zipped_divide/logical_divide/slice 已全走 oracle；group_modes/layout_eval 与宿主静态快路径（旗舰 verbatim 路径承重墙）待统一；
+- **前端分派**：约 260 处 isinstance 链与少量 `type().__name__` 字符串分派，待按 `mma_atoms.py` 的 trait-table 模式分批重构（copy → mma → tma 族）；
+- **集群**：仅 cluster (1,1,1)；多 CTA cluster / TMA multicast 机器已备未启用；
+- **性能**：小 batch norm 形状与官方差距大（见 summary.md；PTX 级归因见技术报告）。
 
-### Status: M8 release (2026-08-27)
-
-- 98/98 tests green (`pytest tests/ -q`): object-model algebra/pipeline/dense
-  GEMM, verbatim flagship kernels (elementwise, dense_gemm, blockscaled
-  cooperative), stage-model + fragment-mode regressions.
-- compute-sanitizer: memcheck 0 errors (blockscaled 3-shape), initcheck 0
-  (dense), racecheck 0 hazards (4-k-tile stage-wrap config), synccheck 0.
-- Perf ledger: `artifacts/perf/comparison.md` — elementwise 101–228%,
-  dense_gemm 83%@2048³ / 44%@4096³ / 95% boundary, blockscaled nvfp4
-  67%@4096³, self-built MLA decode 1.08–2.13× vs PyTorch reference
-  (`artifacts/perf/mla_decode_self.json`).
-- SBOM + anti-cheat attestations: `artifacts/SBOM.md`.
-- Honest boundaries: dense_gemm tile_m=128 SMEM overflow (official skips
-  too) & tile_n=128 epi; blockscaled sv=32 hang & unaligned-boundary host
-  alignment; oversubscribed persistent grids need scf.while; FlashMLA =
-  SM100-tcgen05 hardware boundary for the OFFICIAL kernels (arch-gate),
-  answered on the self stack by a self-built sm120 warp-mma MLA core
-  (option B, see operator matrix).
-
-### Status: M0 complete — official baseline frozen (2026-08-25)
-
-| Operator | Source | Official baseline | Self stack |
-|---|---|---|---|
-| dense GEMM — 7 configs (FP16/BF16, tiles 64³–128×256×64, M/N-major, batch, boundary) | CUTLASS `blackwell_geforce/dense_gemm.py` @ 7107b055 | ✅ 7/7 PASS | 🔨 M6 |
-| block-scaled GEMM — cooperative | CUTLASS `dense_blockscaled_gemm_persistent_cooperative.py` | ✅ 10/10 PASS | ✅ nvfp4 verbatim golden PASS (3 shapes + 4-config matrix; 67% @4096³); sv=32/boundary = honest boundary |
-| block-scaled GEMM — ping-pong, 6 configs | CUTLASS `dense_blockscaled_gemm_persistent_pingpong.py` | ✅ 6/6 PASS (tile-K 256 excluded: official bug, see `compat/exclusions.yaml`) | 🔨 M7 |
-| RMSNorm + FP4 quant fusion (1007 parametrized tests) | FlashInfer `cute_dsl/rmsnorm_fp4quant.py` @ 9d33a28e | ✅ PASS | 🔨 M2+ |
-| Add + RMSNorm + FP4 quant fusion (1188 tests) | FlashInfer `cute_dsl/add_rmsnorm_fp4quant.py` | ✅ PASS | 🔨 M2+ |
-| W4A16 FP4 fused MoE B12x (142 functional tests incl. 36 numerical-accuracy configs) | FlashInfer `fused_moe/cute_dsl/blackwell_sm12x/` | ✅ PASS | 🔨 M6+ |
-| FlashMLA / MLA decode | (a) CUTLASS `blackwell/attention/mla/mla_decode_fp16.py`; (b) IISuperluminaLII/FlashMLA_Windows_Linux_sm120; (c) fernandaspets/vllm_FlashMLA | ❌ **not runnable on this GPU via official CuTeDSL — verified empirically 2026-08-27**: (a) official CuTeDSL arch-gate rejects sm_120a (`expects sm_100a/sm_100f/sm_110a… got sm_120a` — tcgen05/TMEM is data-center-Blackwell-only hardware); (b)+(c) cloned & audited: both are **nvcc/CUDA-extension C++ implementations** (18/21 .cu kernels, zero CuTeDSL/`cutlass.cute`/`cute.jit` references; Python files are test/bench harness only) — import in `.venv-reference` fails with `Unable to import FlashMLA CUDA extension` (repo b) / `No module named flash_mla.cuda` (repo c). Neither can "work on official CuTeDSL" — they are not CuTeDSL programs at all. Re-audited at upstream tips 2026-08-27: flashinfer @ 9caa4488 has NO CuTeDSL MLA at all (attention/cute_dsl = fmha only; mla/_core.py dispatches trtllm-gen + XQA, both C++/cubin) and deepseek-ai/FlashMLA remains SM90/SM100-only | ✅ **option B: self-built sm120 warp-mma MLA decode core** (absorbed form, split-KV FlashDecoding, online softmax, register O-accumulator, runtime-S `scf.for`) — golden PASS 4 shapes vs torch, **1.08–2.13× faster than the PyTorch reference**, sanitizer ×4 clean. Kernel: `tests/python/test_mla_decode_self.py`; data: `artifacts/perf/mla_decode_self.json`; dedicated repo: `zhaosiying12138/sm120-cutedsl-flashmla` |
-
-### Self-stack verified so far (M4 complete)
-
-| Capability | Evidence |
-|---|---|
-| Official `elementwise_add.py` UNMODIFIED, golden PASS (6 shapes incl. boundaries) | `third_party/cutlass/examples/.../elementwise_add.py` in self env |
-| Performance parity with official compiler | 2048²: 790 vs 785 GB/s (101%); 8192²: 732 vs 725 (101%); 1024²: 369 vs 161 (228%) — `artifacts/perf/` |
-| Real warp MMA: ldmatrix.x4/x2.trans + mma.sync m16n8k16 golden (raw MLIR) | `tests/runtime/sm120/test_mma_m16n8k16.py` |
-| Frontend warp GEMM via @cute.jit (SMEM+ldmatrix+mma loop-carried K) golden, 3 shapes | `tests/python/test_gemm_frontend.py` |
-| TMA roundtrip (G2S + mbarrier complete_tx + S2G) golden — raw MLIR and @cute.jit frontend | `tests/runtime/sm120/test_tma_g2s_s2g.py`, `tests/python/test_tma_frontend.py` |
-| 2-stage TMA pipeline with phase-parity rollover golden (n_tiles 2/4/7, OOB tiles) | `tests/runtime/sm120/test_tma_pipeline.py` |
-| setmaxnreg inc/dec + named barriers verified on 5090 | scratch/verify_smr.py runbook |
-| CuTe object model: make_tiled_tma_atom / tma_partition / make_tiled_mma call shapes, multi-warp TMA GEMM golden (K 64/128/256) | `tests/python/test_tma_gemm_objects.py` |
-| Multi-CTA local-tile TMA GEMM (per-CTA A-row/B-col windows) golden | `tests/python/test_local_tile_kernel.py` |
-| 2-stage pipelined multi-CTA TMA GEMM (staged SMEM, parity rollover) golden | `tests/python/test_tma_pipeline_gemm.py` |
-| Wide-N (64-col) 8-warp pipelined TMA GEMM golden | `tests/python/test_tma_gemm_wide_n.py` |
-| **Persistent full-matrix TMA GEMM with TMA S2G epilogue — 9 configs, 31 TFLOP/s (72% of official)** | `tests/python/test_persistent_gemm.py` |
-| **Object model (PLAN_object_model): Python emits cute.* text; algebra owned by C++ passes** — spike + 27 tests | `tests/python/test_object_model_*.py` |
-| **S4 dense_gemm-shaped kernel from the full object model (algebra emission + trait table + pipeline driver + generalized TMA), 5 golden configs** | `tests/python/test_object_model_dense_gemm.py` |
-| **Official blockscaled cooperative kernel unmodified: NVFP4 random-SF golden for K=128 and K=256 with tile-K 128** | `tests/python/test_blockscaled_stage_model.py` |
-| PTX fingerprints: ld.global.v4, ldmatrix, mma.sync.aligned.m16n8k16, cp.async.bulk.tensor, mbarrier.* | test asserts |
-
-### Flagship status (dense_gemm / blockscaled)
-
-Dense GEMM is runnable unmodified, and blockscaled cooperative NVFP4 now
-passes random-SF golden for tile-K 128 (including a second global K tile).
-The full M7 matrix is still incomplete: tile-K 256 currently hangs, and the
-ping-pong / FP8 / mixed paths have not been accepted on the self stack. Full
-inventory: `compat/sm120_flagship_gap.md`. Self GEMM perf trajectory: 53.5
-(narrow-N pipeline) → 1,361 (wide-N
-8-warp) → **30,972 GFLOP/s (persistent, full-matrix, 72% of official
-dense_gemm)** — remaining gap drivers: warp specialization (producer
-warps), deeper stages, 128-wide tiles, TMA multicast.
-
-Two PTX memory-model races root-caused on the way (missing
-fence.proxy.async before TMA S2G; multi-thread mbarrier.init UB) —
-details in compat/sm120_flagship_gap.md and git history.
-
-**Object-model architecture (the go-forward route, per PLAN_object_model.md):**
-Python never reimplements layout algebra. The emission layer
-(`python/self_cutedsl/object_model/`) serializes meta-objects to
-`!cute<...>` textual MLIR; result types are computed by the
-cutlass-compiler **verifier itself** (probe-and-read-back); trait tables
-drive MMA partitioning; driver objects (PipelineTmaAsync) sit on the
-verified mbarrier/TMA builtins. New atoms/swizzles are data (table rows
-+ serializers), not code.
-
-Toolchain frozen in `compat/sm120_toolchain.lock.yaml`: pinned LLVM `23a60f15`
-(5193/5193 targets), cutlass_compiler @ `7107b055` with **check-cute 236/236
-passed**, official DSL 4.7.0, torch 2.13.0+cu130, driver 610.53.
-
-## Repository layout
+## 9. 目录结构
 
 ```
-compiler/     C++/MLIR: selfcute dialects (kernel, pipeline, sm120) + conversions
-python/       self_cutedsl Python package (frontend + runtime bindings)
-runtime/      CUDA-Driver-JIT loader, TensorMap runtime, DLPack adapter
-compat/       frozen baseline manifests, API surface, exclusions
-tests/        python / lit / ptx FileCheck / on-GPU / conformance
-tools/        build + validation + inspection scripts
-third_party/  vendored BSD cutlass_compiler subtree + FlashInfer operators (Apache-2.0)
+python/self_cutedsl/    前端（jit/interp/emitter/builtins）、对象模型、runtime（Driver JIT/TMA）
+python/cutlass_compat/  官方 cutlass.* API 面 → 本栈的 BSD 兼容层（flashinfer 桥在此）
+compiler/               selfcute dialect 骨架（ODS；生产路径未启用）
+tools/                  构建/验证/基准（perf/ 与 cutegen_oracle/ 在此）
+tests/                  259 项测试（verbatim golden + 差分护栏 + 策略测试）
+compat/                 冻结的工具链锁与参考基线
+artifacts/              性能/基线数据与 SBOM
+third_party/cutlass/    vendored BSD 子树（cutlass_compiler + examples）
+docs/                   BUILD.md 构建指南
 ```
 
-## License
+## 10. 许可
 
-BSD 3-Clause for this repository's code. Vendored third-party code retains its
-original license (see `third_party/PROVENANCE.md`).
+本仓库 BSD-3-Clause。vendored 组件：CUTLASS / cutlass_compiler（BSD-3）、nanobind（BSD-3）；flashinfer 语料（Apache-2.0）按 pin 获取、不 vendored。官方闭源 wheel 仅存在于隔离的 `.venv-reference` 作基线。
