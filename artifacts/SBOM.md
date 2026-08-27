@@ -7,7 +7,7 @@
 | CuTe object model (algebra via C++ passes) | python/self_cutedsl/object_model | mma_atoms trait table, pipeline drivers |
 | runtime (Driver JIT, tensor-map encode, manifests) | python/self_cutedsl/runtime | cuModuleLoadDataEx + cuTensorMapEncodeTiled only |
 | cutlass_compat (BSD-licensed surface re-export layer) | python/cutlass_compat | maps official wheel API onto self stack |
-| tests | tests/python | 98 tests incl. verbatim flagship kernels |
+| tests | tests/ | 121 tests incl. verbatim flagship kernels (115 host/python + 6 on-GPU runtime) |
 
 ## Third-party
 | Component | Version/Commit | License | Use |
@@ -21,7 +21,9 @@
 
 ## Anti-cheat attestations
 - No `_cutlass_ir` / nvcc / NVRTC / ptxas invocation in the self stack
-  (tools/inspect_ptx.py audits every launch; ptxas used only as a
+  (tools/verify_open_stack.py asserts the import/PATH surface;
+  tools/inspect_ptx.py audits PTX dumps — target/entries/MMA presence —
+  for any workload run with DG_DUMP_PTX=1; ptxas was used only as a
   diagnostic in /tmp during debugging, never in the build path).
 - No filename/shape/argv special-casing; no scalar-FMA masquerade (audited
   PTX contains nvvm.mma.sync / OMMA.SF only); no hand-encoded

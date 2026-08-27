@@ -58,7 +58,11 @@ class HardwareInfo:
         self.sm_count = props.multi_processor_count
         self.l2_cache_size = getattr(props, "L2_cache_size", 0)
         self.threads_per_wave = 32 * self.sm_count
-        self.max_active_clusters = 1
+        # This profile launches clusters of (1,1,1) only, so the resident
+        # wave is one CTA per SM. Persistent kernels size their grid from
+        # this value — the old placeholder of 1 collapsed the b12x MoE onto
+        # a single CTA (~130x slowdown at realistic shapes).
+        self.max_active_clusters = self.sm_count
 
     def query_cluster_size(self, cluster_shape):
         return 1
@@ -68,7 +72,10 @@ class HardwareInfo:
                 "compute_capability": self.compute_capability}
 
     def get_max_active_clusters(self, cluster_size=1):
-        return 1
+        # cluster_size == 1: one CTA per SM. Multi-CTA clusters are out of
+        # profile (launch-time rejection), so only the geometric bound is
+        # reported there.
+        return max(1, self.sm_count // max(1, int(cluster_size)))
 
     def get_cluster_dim(self, cluster_shape):
         return 1

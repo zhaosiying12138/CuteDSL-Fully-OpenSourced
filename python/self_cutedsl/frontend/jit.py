@@ -212,15 +212,20 @@ class JitFunction:
     def __get__(self, obj, objtype=None):
         if obj is None:
             return self
-        # bound-method access on the decorated METHOD — one bound clone
-        # per instance so its specialization cache survives across calls
-        cached = getattr(obj, "_jit_bound_self", None)
-        if cached is not None and cached.__name__ == self.__name__:
+        # One bound clone per (instance, METHOD): sibling @cute.jit methods
+        # on the same instance must not evict each other's specialization
+        # cache. The b12x static kernel launches __call__ and
+        # _resident_grid_barrier every invocation — with a single shared
+        # slot each access missed and rebuilt a fresh JitFunction, forcing a
+        # full re-trace + re-compile per call (~600 ms steady-state).
+        slot = f"_jit_bound_{self.__name__}"
+        cached = getattr(obj, slot, None)
+        if cached is not None:
             return cached
         bound = JitFunction(self.fn, _self=obj)
         bound._name_prefix = self._name_prefix
         try:
-            obj._jit_bound_self = bound
+            setattr(obj, slot, bound)
         except Exception:
             pass
         return bound
