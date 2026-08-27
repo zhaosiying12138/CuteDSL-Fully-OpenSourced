@@ -150,7 +150,7 @@ def make_identity_tensor(shape):
 
 # --------------------------------------------------------------- copies/mma
 def make_copy_atom(op, element_type, **kwargs):
-    if op.__class__.__name__ == "CopyG2SOp":
+    if op.__class__.__name__ in ("CopyG2SOp", "CopyUniversalOp"):
         from cutlass.cute._fi_copy import make_copy_atom as _mc
 
         return _mc(op, element_type, **kwargs)
@@ -178,8 +178,8 @@ def make_tiled_copy_S(atom, tiled_copy_c):
 def make_tiled_copy(atom, thr_layout, val_shape=None):
     """cute.make_tiled_copy(atom, TV-layout, val-shape): SF smem->rmem copy
     descriptor; lowered at the copy site from the SF trait geometry."""
-    from cutlass.cute._fi_copy import _CpAsyncAtom, TVCopyAsync
-    if isinstance(atom, _CpAsyncAtom):
+    from cutlass.cute._fi_copy import _CpAsyncAtom, _UniversalAtom, TVCopyAsync
+    if isinstance(atom, (_CpAsyncAtom, _UniversalAtom)):
         return TVCopyAsync(atom, thr_layout, val_shape)
     return _SF_copy(atom, thr_layout, val_shape)
 
@@ -250,9 +250,17 @@ def copy(atom, src, dst, pred=None, **kw):
 
     from self_cutedsl.frontend.cute_objects import TiledCopyR2S
 
-    from cutlass.cute._fi_copy import _CpAsyncAtom, copy_cpasync
+    from cutlass.cute._fi_copy import (
+        _CpAsyncAtom,
+        _UniversalAtom,
+        copy_cpasync,
+        copy_universal,
+    )
     if isinstance(atom, _CpAsyncAtom):
         copy_cpasync(atom, src, dst, pred)
+        return
+    if isinstance(atom, _UniversalAtom):
+        copy_universal(atom, src, dst, pred)
         return
     if type(atom).__name__ == "_SF_copy":
         builtins.copy_sf(atom, src, dst)

@@ -55,9 +55,21 @@ def _nearest_e2m1(values: torch.Tensor) -> torch.Tensor:
     return lut[(values.unsqueeze(-1) - lut).abs().argmin(dim=-1)]
 
 
+def _quantize_nvfp4_reference(values: torch.Tensor, global_scale: float):
+    M, H = values.shape
+    blocks = values.view(M, H // 16, 16)
+    sf = (blocks.abs().amax(-1) * global_scale / 6.0).clamp(max=448.0)
+    sf_q = sf.to(torch.float8_e4m3fn).float()
+    scaled = torch.where(
+        sf_q.unsqueeze(-1) > 0,
+        blocks * global_scale / sf_q.unsqueeze(-1),
+        torch.zeros_like(blocks),
+    )
+    return _nearest_e2m1(scaled).view(M, H), sf_q
+
+
 def ref_rmsnorm_fp4(x, w, eps, global_scale):
     """True RMSNorm plus the operator's documented half2 NVFP4 recipe."""
-    M, H = x.shape
     xf = x.float()
     rstd = torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)
     rms = (xf * rstd * w.float()).to(x.dtype).float()
@@ -65,16 +77,44 @@ def ref_rmsnorm_fp4(x, w, eps, global_scale):
     # f32 scaling with rstd. Mirror that rounding for exact FP4/SF codes while
     # retaining ``rms`` above as the independent true-math comparison.
     quant_input = (x * w).float() * rstd
-    yb = quant_input.view(M, H // 16, 16)
-    sf = (yb.abs().amax(-1) * global_scale / 6.0).clamp(max=448.0)
-    sf_q = sf.to(torch.float8_e4m3fn).float()
-    scaled = torch.where(
-        sf_q.unsqueeze(-1) > 0,
-        yb * global_scale / sf_q.unsqueeze(-1),
-        torch.zeros_like(yb),
-    )
-    yq = _nearest_e2m1(scaled)
-    return rms, yq.view(M, H), sf_q
+    yq, sf_q = _quantize_nvfp4_reference(quant_input, global_scale)
+    return rms, yq, sf_q
+
+
+def ref_add_rmsnorm_fp4(x, residual, w, eps, global_scale):
+    """Reference the in-place add, reduction arithmetic, and NVFP4 output."""
+    h_acc = x.float() + residual.float()
+    residual_out = h_acc.to(x.dtype)
+
+    # The kernel reduces the f32 add result, then reads the rounded residual
+    # from shared memory for the RMSNorm weight/quantization phase.
+    kernel_rstd = torch.rsqrt(h_acc.pow(2).mean(-1, keepdim=True) + eps)
+    quant_input = residual_out.float() * kernel_rstd * w.float()
+    yq, sf_q = _quantize_nvfp4_reference(quant_input, global_scale)
+
+    # Independent upstream-style true math uses the observable residual value.
+    h = residual_out.float()
+    rms = (h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + eps) * w.float()) \
+        .to(x.dtype).float()
+    return residual_out, rms, yq, sf_q
+
+
+def _nvfp4_outputs_ok(y, s, rms_ref, y_ref, sf_ref, global_scale):
+    B, H = y_ref.shape
+    y_dec = _fp4_dequant(y)
+    sf_dec = _e4m3_bits_to_float(s)
+    frac = y_dec.eq(y_ref).float().mean().item()
+    fp4_exact = frac == 1.0
+    sf_exact = torch.equal(sf_dec, sf_ref)
+
+    y_dequant = (
+        y_dec.view(B, H // 16, 16) * sf_dec.unsqueeze(-1) / global_scale
+    ).view(B, H)
+    diff = (y_dequant - rms_ref).abs()
+    rel_diff = diff / (rms_ref.abs() + 1e-8)
+    tight_fraction = ((diff <= 0.5) | (rel_diff <= 0.3)).float().mean().item()
+    loose_all = bool(((diff <= 2.0) | (rel_diff <= 0.5)).all())
+    return fp4_exact and sf_exact and tight_fraction >= 0.99 and loose_all, frac
 
 
 def run_rmsnorm_case(B, H, dtype=torch.float16, eps=1e-6):
@@ -94,27 +134,43 @@ def run_rmsnorm_case(B, H, dtype=torch.float16, eps=1e-6):
     ops.rmsnorm_fp4quant(x, w, y, s, global_scale=gs_t, eps=eps, block_size=16)
     torch.cuda.synchronize()
 
-    y_dec = _fp4_dequant(y)                        # (M, H) f32
-    sf_dec = _e4m3_bits_to_float(s)                # (M, H/16) f32
     rms_ref, y_ref, sf_ref = ref_rmsnorm_fp4(x, w, eps, gs)
+    return _nvfp4_outputs_ok(y, s, rms_ref, y_ref, sf_ref, gs)
 
-    # Exact semantic checks for both quantized outputs. Negative and positive
-    # zero compare equal, which is intentional at the mathematical level.
-    frac = y_dec.eq(y_ref).float().mean().item()
-    fp4_exact = frac == 1.0
-    sf_exact = torch.equal(sf_dec, sf_ref)
 
-    # The upstream operator validates the dequantized result against true
-    # RMSNorm math. During quantization the block scale includes global_scale,
-    # so dequantization divides by it.
-    y_dequant = (
-        y_dec.view(B, H // 16, 16) * sf_dec.unsqueeze(-1) / gs
-    ).view(B, H)
-    diff = (y_dequant - rms_ref).abs()
-    rel_diff = diff / (rms_ref.abs() + 1e-8)
-    tight_fraction = ((diff <= 0.5) | (rel_diff <= 0.3)).float().mean().item()
-    loose_all = bool(((diff <= 2.0) | (rel_diff <= 0.5)).all())
-    return fp4_exact and sf_exact and tight_fraction >= 0.99 and loose_all, frac
+def run_add_rmsnorm_case(B, H, dtype=torch.float16, eps=1e-6):
+    cutlass.cuda.initialize_cuda_context()
+    torch.manual_seed(42)
+    ops = FV.load_operator("add_rmsnorm_fp4quant")
+
+    x = torch.randn(B, H, device="cuda", dtype=dtype)
+    residual = torch.randn(B, H, device="cuda", dtype=dtype)
+    residual_before = residual.clone()
+    w = torch.randn(H, device="cuda", dtype=dtype)
+    gs = (448 * 448 * 6.0) ** 0.5 / 448.0
+    gs_t = torch.tensor([gs], device="cuda", dtype=torch.float32)
+    y = torch.empty(B, H // 2, device="cuda", dtype=torch.uint8)
+    s = torch.empty(B, H // 16, device="cuda", dtype=torch.uint8)
+
+    ops.add_rmsnorm_fp4quant(
+        x,
+        residual,
+        w,
+        y,
+        s,
+        global_scale=gs_t,
+        eps=eps,
+        block_size=16,
+    )
+    torch.cuda.synchronize()
+
+    residual_ref, rms_ref, y_ref, sf_ref = ref_add_rmsnorm_fp4(
+        x, residual_before, w, eps, gs
+    )
+    outputs_ok, frac = _nvfp4_outputs_ok(
+        y, s, rms_ref, y_ref, sf_ref, gs
+    )
+    return torch.equal(residual, residual_ref) and outputs_ok, frac
 
 
 @pytest.mark.sm120
@@ -122,3 +178,10 @@ def run_rmsnorm_case(B, H, dtype=torch.float16, eps=1e-6):
 def test_rmsnorm_fp4quant_verbatim(B, H):
     ok, frac = run_rmsnorm_case(B, H)
     assert ok, f"fp4 values mismatch (exact-grid fraction {frac:.3f})"
+
+
+@pytest.mark.sm120
+@pytest.mark.parametrize("B,H", [(1, 128), (4, 128), (7, 256), (3, 512)])
+def test_add_rmsnorm_fp4quant_verbatim(B, H):
+    ok, frac = run_add_rmsnorm_case(B, H)
+    assert ok, f"add+rmsnorm fp4 mismatch (exact-grid fraction {frac:.3f})"

@@ -70,12 +70,52 @@ def _typed_from_dtype(dtype, ssa=None, value=None):
         _CLASS_BY_DTYPE[dtype.name] = cls
         setattr(cutlass.cutlass_dsl, dtype.name, cls)
     v = value
+    source_dtype = None
     if isinstance(v, TypedScalar):
+        source_dtype = v.dtype
         if ssa is None:
             ssa = v.ssa
         if value is None or not isinstance(value, (int, float)):
             v = v.value
     elif hasattr(v, "name") and hasattr(v, "type") and ssa is None:
         # raw emitter SSA handle: adopt it directly
-        return cls(value=None, dtype=dtype, ssa=v)
+        ssa = v
+        v = None
+    if ssa is not None and ssa.type != dtype.mlir:
+        ssa = _cast_scalar_ssa(ssa, source_dtype, dtype)
     return cls(value=v, dtype=dtype, ssa=ssa)
+
+
+def _cast_scalar_ssa(ssa, source_dtype, target_dtype):
+    """Materialize official typed-scalar conversions in textual MLIR."""
+    from ._bridge_helpers import _emitter
+
+    e = _emitter()
+    src, dst = ssa.type, target_dtype.mlir
+    source_name = getattr(source_dtype, "name", "")
+    source_unsigned = source_name.startswith(("Uint", "UInt"))
+    if src == "index" and dst.startswith("i"):
+        return e.ssa(dst, f"arith.index_cast {ssa.name} : index to {dst}")
+    if src.startswith("i") and dst == "index":
+        return e.ssa(dst, f"arith.index_cast {ssa.name} : {src} to index")
+    if src.startswith("i") and dst.startswith("i"):
+        src_bits, dst_bits = int(src[1:]), int(dst[1:])
+        if src_bits < dst_bits:
+            op = "arith.extui" if source_unsigned else "arith.extsi"
+        elif src_bits > dst_bits:
+            op = "arith.trunci"
+        else:
+            return ssa
+        return e.ssa(dst, f"{op} {ssa.name} : {src} to {dst}")
+    if src == "f16" and dst == "f32":
+        return e.ssa(dst, f"llvm.fpext {ssa.name} : f16 to f32")
+    if src == "f32" and dst == "f16":
+        return e.ssa(dst, f"arith.truncf {ssa.name} : f32 to f16")
+    if src.startswith("i") and dst.startswith("f"):
+        op = "arith.uitofp" if source_unsigned else "arith.sitofp"
+        return e.ssa(dst, f"{op} {ssa.name} : {src} to {dst}")
+    if src.startswith("f") and dst.startswith("i"):
+        target_unsigned = target_dtype.name.startswith(("Uint", "UInt"))
+        op = "arith.fptoui" if target_unsigned else "arith.fptosi"
+        return e.ssa(dst, f"{op} {ssa.name} : {src} to {dst}")
+    raise TypeError(f"unsupported typed scalar conversion {src} -> {dst}")

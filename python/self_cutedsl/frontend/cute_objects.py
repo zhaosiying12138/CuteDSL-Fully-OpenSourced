@@ -184,6 +184,10 @@ class Tensor:
         """Coord selection over flat modes: None keeps, SSA/int selects
         (mode dropped from the layout, offset recorded in coord_offs)."""
         idx = idx if isinstance(idx, tuple) else (idx,)
+        flat_shape = list(_flatten(self.layout.shape))
+        if len(idx) == len(flat_shape) and all(c is not None for c in idx) \
+                and self.base.__class__.__name__ == "SmemArray":
+            return self._load_smem_element(idx)
         # ((tile),(rest))[(k, (None,...))] — hierarchical grid idiom:
         # select tile group k, keep the flagged rest modes
         if len(idx) == 2 and isinstance(idx[0], int) \
@@ -220,6 +224,60 @@ class Tensor:
         nv.coord_offs = offs
         nv.swizzle = getattr(self, "swizzle", None)
         return nv
+
+    def _load_smem_element(self, coord):
+        from cutlass._bridge_helpers import _emitter
+        from cutlass import Float16, Float32
+
+        e = _emitter()
+        total = None
+        for value, stride in zip(coord, _flatten(self.layout.stride)):
+            if hasattr(value, "ssa"):
+                if value.ssa is None:
+                    value.ir_value()
+                value = value.ssa
+            if hasattr(value, "type"):
+                if value.type == "index":
+                    value = e.ssa(
+                        "i64", f"arith.index_cast {value.name} : index to i64")
+                elif value.type != "i64":
+                    value = e.ssa(
+                        "i64", f"arith.extsi {value.name} : {value.type} to i64")
+                term = value
+                if int(stride) != 1:
+                    scale = e.ssa(
+                        "i64", f"arith.constant {int(stride)} : i64")
+                    term = e.ssa(
+                        "i64", f"arith.muli {value.name}, {scale.name} : i64")
+            else:
+                term = int(value) * int(stride)
+            if total is None:
+                total = term
+            elif isinstance(total, int) and isinstance(term, int):
+                total += term
+            else:
+                if isinstance(total, int):
+                    total = e.ssa(
+                        "i64", f"arith.constant {total} : i64")
+                if isinstance(term, int):
+                    term = e.ssa(
+                        "i64", f"arith.constant {term} : i64")
+                total = e.ssa(
+                    "i64", f"arith.addi {total.name}, {term.name} : i64")
+        if isinstance(total, int):
+            total = e.ssa("i64", f"arith.constant {total} : i64")
+        elem_name = getattr(self.element, "name", "")
+        elem_type = "f32" if elem_name in ("f32", "Float32") else "f16"
+        ptr = e.ssa(
+            "!llvm.ptr<3>",
+            f"llvm.getelementptr {self.base.ptr.name}[{total.name}] : "
+            f"(!llvm.ptr<3>, i64) -> !llvm.ptr<3>, {elem_type}",
+        )
+        loaded = e.ssa(
+            elem_type,
+            f"llvm.load {ptr.name} : !llvm.ptr<3> -> {elem_type}",
+        )
+        return (Float32 if elem_type == "f32" else Float16)(loaded)
 
 
 def make_tensor(base, layout, element):

@@ -30,9 +30,20 @@ class _CpAsyncAtom:
         self.bits = num_bits_per_copy
 
 
+class _UniversalAtom:
+    """Register/global universal copy using the flashinfer TV geometry."""
+
+    def __init__(self, op, elem, num_bits_per_copy):
+        self.op = op
+        self.elem = elem
+        self.bits = num_bits_per_copy
+
+
 def make_copy_atom(op, elem=None, num_bits_per_copy=None, **kw):
     if op.__class__.__name__ == "CopyG2SOp":
         return _CpAsyncAtom(op, elem, num_bits_per_copy or 128)
+    if op.__class__.__name__ == "CopyUniversalOp":
+        return _UniversalAtom(op, elem, num_bits_per_copy or 128)
     from self_cutedsl.frontend import builtins as _b
     return _b.make_copy_atom(op, elem, **kw)
 
@@ -76,12 +87,12 @@ class TVPartView:
 
     @property
     def shape(self):
-        T, R, V, B = self._geom
+        _, _, V, B = self._geom
         return (V * B,)
 
     def thread_base(self):
         """(t, r) decomposition of the bound thread index."""
-        T, R, V, B = self._geom
+        T, _, _, _ = self._geom
         e = _emitter()
         tid = self.tc.tidx
         t = e.idx_binop("arith.remsi", tid, e.ssa("index", f"arith.constant {T} : index")) \
@@ -94,7 +105,7 @@ class TVPartView:
         """Tile (row, col) for value-unit j of the bound thread (constexpr
         j only — the kernels iterate value units at trace time)."""
         e = _emitter()
-        T, R, V, B = self._geom
+        T, _, V, _ = self._geom
         t, r = self.thread_base()
 
         def _c(x):
@@ -115,6 +126,39 @@ class TVPartView:
     def __getitem__(self, idx):
         return _TVUnit(self, idx if not isinstance(idx, tuple) else idx[0])
 
+    def store(self, view):
+        """Store a register FragmentView into this shared-memory partition."""
+        e = _emitter()
+        arr = self.tensor.base
+        ptr = arr.ptr if hasattr(arr, "ptr") else arr
+        _, _, V, B = self._geom
+        for j in range(V * B):
+            row, col = self.coord(j)
+            row = row if hasattr(row, "name") else e.ssa(
+                "index", f"arith.constant {int(row)} : index")
+            col = col if hasattr(col, "name") else e.ssa(
+                "index", f"arith.constant {int(col)} : index")
+            offset = e.idx_binop(
+                "arith.addi",
+                e.idx_binop(
+                    "arith.muli",
+                    row,
+                    e.ssa(
+                        "index", f"arith.constant {int(self.tc.tiler[1])} : index"),
+                ),
+                col,
+            )
+            offset64 = e.ssa(
+                "i64", f"arith.index_cast {offset.name} : index to i64")
+            elem_ptr = e.ssa(
+                "!llvm.ptr<3>",
+                f"llvm.getelementptr {ptr.name}[{offset64.name}] : "
+                "(!llvm.ptr<3>, i64) -> !llvm.ptr<3>, f16",
+            )
+            value = view.values[j]
+            e.raw(
+                f"llvm.store {value.name}, {elem_ptr.name} : f16, !llvm.ptr<3>")
+
 
 class _TVUnit:
     def __init__(self, view, j):
@@ -133,20 +177,30 @@ def copy_cpasync(atom, tXgX, tXsX, pred):
     T, R, V, B = tXgX._geom
     gX = tXgX.tensor          # host/kernel tensor view (gmem)
     sX = tXsX.tensor          # smem tensor view
-    H = _tile_cols(tXgX)      # full row extent for gmem addressing
+    row_stride, col_stride = _tensor_strides(gX)
     bidx = _active_bidx()
     bytes_per = atom.bits // 8
     elems = bytes_per // 2    # f16 element size assumed for G2S loads
     for b in range(B):
         row, col0 = tXgX.coord(b * V)
-        # gmem address: (bidx*R + row)*H + col0 .. +V
+        # gmem address follows the source view's real strides. In particular,
+        # the add-rmsnorm weight view broadcasts its row mode with stride 0.
         gr = e.idx_binop("arith.addi",
                          e.idx_binop("arith.muli", bidx,
                                      e.ssa("index", f"arith.constant {R} : index")),
                          row if not isinstance(row, int) else e.ssa("index", f"arith.constant {row} : index"))
-        grow_off = e.idx_binop("arith.muli", gr, e.ssa("index", f"arith.constant {H} : index"))
+        grow_off = e.idx_binop(
+            "arith.muli",
+            gr,
+            e.ssa("index", f"arith.constant {row_stride} : index"),
+        )
         gcol = col0 if not isinstance(col0, int) else e.ssa("index", f"arith.constant {col0} : index")
-        goff = e.idx_binop("arith.addi", grow_off, gcol)
+        gcol_off = e.idx_binop(
+            "arith.muli",
+            gcol,
+            e.ssa("index", f"arith.constant {col_stride} : index"),
+        ) if col_stride != 1 else gcol
+        goff = e.idx_binop("arith.addi", grow_off, gcol_off)
         gp = _gep_gmem(e, gX, goff)
         # smem address: col-major tile -> row + col*R
         scol = gcol
@@ -162,6 +216,55 @@ def copy_cpasync(atom, tXgX, tXsX, pred):
         e.open_if(p)
         e.raw(f'nvvm.inline_ptx "cp.async.cg.shared.global [$1], [$0], {bytes_per};" '
               f'ro ({gp.name}, {sp.name} : !llvm.ptr<1>, !llvm.ptr<3>)')
+        e.close_if()
+
+
+def copy_universal(atom, src, dst, pred):
+    """Fragment -> global TV partition used for residual in-place stores."""
+    from self_cutedsl.frontend.kernel_objects import Fragment
+
+    if not isinstance(src, Fragment) or not isinstance(dst, TVPartView):
+        raise TypeError(
+            f"universal copy needs Fragment -> TVPartView, got "
+            f"{type(src)} -> {type(dst)}"
+        )
+    e = _emitter()
+    _, R, V, B = dst._geom
+    row_stride, col_stride = _tensor_strides(dst.tensor)
+    bidx = _active_bidx()
+    for j in range(V * B):
+        row, col = dst.coord(j)
+        row = row if hasattr(row, "name") else e.ssa(
+            "index", f"arith.constant {int(row)} : index")
+        col = col if hasattr(col, "name") else e.ssa(
+            "index", f"arith.constant {int(col)} : index")
+        global_row = e.idx_binop(
+            "arith.addi",
+            e.idx_binop(
+                "arith.muli",
+                bidx,
+                e.ssa("index", f"arith.constant {R} : index"),
+            ),
+            row,
+        )
+        offset = e.idx_binop(
+            "arith.addi",
+            e.idx_binop(
+                "arith.muli",
+                global_row,
+                e.ssa("index", f"arith.constant {row_stride} : index"),
+            ),
+            e.idx_binop(
+                "arith.muli",
+                col,
+                e.ssa("index", f"arith.constant {col_stride} : index"),
+            ) if col_stride != 1 else col,
+        )
+        ptr = _gep_gmem(e, dst.tensor, offset)
+        guard = _pred_at(pred, j // V)
+        e.open_if(guard)
+        value = src.slots[j]
+        e.raw(f"llvm.store {value.name}, {ptr.name} : f16, !llvm.ptr<1>")
         e.close_if()
 
 
@@ -181,6 +284,17 @@ def _pred_at(pred, b):
 def _tile_cols(view):
     tiler = view.tc.tiler
     return int(tiler[1])
+
+
+def _tensor_strides(tensor):
+    from self_cutedsl.frontend.cute_objects import _flatten
+
+    strides = tuple(int(v) for v in _flatten(tensor.layout.stride))
+    if not strides:
+        return 1, 1
+    if len(strides) == 1:
+        return strides[0], 1
+    return strides[0], strides[1]
 
 
 def _active_bidx():
