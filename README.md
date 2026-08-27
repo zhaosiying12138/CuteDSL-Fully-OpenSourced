@@ -34,6 +34,14 @@ CUDA Driver JIT (cuModuleLoadDataEx)       ← 本仓库 runtime；全程无 ptx
 
 闭源缺口的补齐方式见[第 7 节](#7-闭源缺口的补齐)。反作弊断言：`tools/verify_open_stack.py`（官方组件不可导入、无 nvcc/ptxas/NVRTC）与 `tools/inspect_ptx.py`（PTX 目标/入口/MMA 审计）。
 
+本机（WSL2 Ubuntu / Windows Terminal）实拍——构建、正确性、双栈性能对比：
+
+![构建成功](docs/img/build.png)
+
+![正确性全绿](docs/img/correctness.png)
+
+![双栈性能对比](docs/img/perf.png)
+
 ## 3. 构建
 
 前置依赖与逐步指南见 **[docs/BUILD.md](docs/BUILD.md)**。概览：

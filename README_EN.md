@@ -55,6 +55,15 @@ How the closed gaps are filled is covered in
 `tools/verify_open_stack.py` (official components unimportable; no
 nvcc/ptxas/NVRTC) and `tools/inspect_ptx.py` (PTX target/entry/MMA audit).
 
+Live captures from this machine (WSL2 Ubuntu / Windows Terminal) — build,
+correctness, dual-stack performance:
+
+![Build succeeded](docs/img/build.png)
+
+![Correctness green](docs/img/correctness.png)
+
+![Dual-stack performance](docs/img/perf.png)
+
 ## 3. Building
 
 Prerequisites and the step-by-step guide live in
