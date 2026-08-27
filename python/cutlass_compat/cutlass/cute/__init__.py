@@ -212,6 +212,7 @@ class _SF_copy:
         self.val_shape = val_shape
         self.tidx = None
         self.which = getattr(thr_layout, "_sf_operand", None)
+        self._tiled_mma = getattr(thr_layout, "_tiled_mma", None)
 
     def get_slice(self, tidx):
         self.tidx = tidx
@@ -511,6 +512,20 @@ def composition(x, mapping):
     operand = _scale_operand(mapping)
     if operand is not None:
         x._sf_operand = operand
+
+    def _tiled_mma(value):
+        if isinstance(value, (tuple, list)):
+            for item in value:
+                result = _tiled_mma(item)
+                if result is not None:
+                    return result
+            return None
+        return getattr(value, "tiled_mma", None) or \
+            getattr(value, "_tiled_mma", None)
+
+    tiled_mma = _tiled_mma(mapping)
+    if tiled_mma is not None:
+        x._tiled_mma = tiled_mma
     return x
 
 
@@ -595,6 +610,9 @@ def make_tiled_mma(atom, atom_layout=None, permutation_mnk=None):
 
     tm = builtins.make_tiled_mma(atom, atom_layout)
     if permutation_mnk is not None:
+        cta_tile = getattr(permutation_mnk, "cta_tile_shape_mnk", None)
+        if cta_tile is not None:
+            tm.cta_tile_shape_mnk = cta_tile
         pm = tuple(int(p) for p in permutation_mnk)
         tm.permutation_mnk = pm
         # the permutation defines the warp-level tile extent (e.g. the

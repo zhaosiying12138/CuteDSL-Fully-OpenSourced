@@ -8,12 +8,21 @@ lowered at the copy site). get_layoutSF{A,B}_TV: thread-value layouts.
 from cutlass.cute import Layout, make_layout
 
 
+class _PermutationMNK(tuple):
+    def __new__(cls, values, cta_tile_shape_mnk):
+        result = super().__new__(cls, values)
+        result.cta_tile_shape_mnk = tuple(
+            int(value) for value in cta_tile_shape_mnk)
+        return result
+
+
 def get_permutation_mnk(tile_shape_mnk, sf_vec_size, use_mxf8f6f4=False):
     if use_mxf8f6f4:
         # fp8-class atoms m16n8k32: warp tile = (4*16, 2*8*4, 32)
-        return (4 * 16, 2 * 8 * 4, 32)
+        return _PermutationMNK(
+            (4 * 16, 2 * 8 * 4, 32), tile_shape_mnk)
     # fp4-class atoms m16n8k64: warp tile = (4*16, 2*8*2, 64)
-    return (4 * 16, 2 * 8 * 2, 64)
+    return _PermutationMNK((4 * 16, 2 * 8 * 2, 64), tile_shape_mnk)
 
 
 def get_layoutSFA_TV(tiled_mma):

@@ -734,6 +734,7 @@ class TiledMma:
         layout_shape = getattr(self.atom_layout, "shape", self.atom_layout)
         self.thr_layout_vmnk = make_layout(
             (32, *tuple(_flatten(layout_shape))))
+        self.thr_layout_vmnk.tiled_mma = self
         self.tile_mn = (am * self.atom_layout[0], an * self.atom_layout[1])
         self.num_warps = num_warps or _prod(_flatten(self.atom_layout))
 
@@ -973,12 +974,13 @@ def _r2s_shape(tc):
 
 
 def _blockscaled_warp_tile(mma):
-    """Per-warp tile inside the fixed 128x128 SM120 CTA tile."""
+    """Per-warp tile inside the configured SM120 CTA tile."""
     atom_layout = getattr(mma, "atom_layout", (4, 2, 1))
     shape = _flatten(getattr(atom_layout, "shape", atom_layout))
     warps_m = int(shape[0]) if shape else 4
     warps_n = int(shape[1]) if len(shape) > 1 else 2
-    return 128 // warps_m, 128 // warps_n, warps_m
+    cta_shape = tuple(getattr(mma, "cta_tile_shape_mnk", (128, 128, 64)))
+    return cta_shape[0] // warps_m, cta_shape[1] // warps_n, warps_m
 
 
 # ------------------------------------------------- smem->rmem tiled copies

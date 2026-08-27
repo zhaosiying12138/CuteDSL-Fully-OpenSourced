@@ -173,6 +173,12 @@ def test_b12x_static_routing_uniform_exact(b12x_ops, tokens):
 
 
 @pytest.mark.sm120
+def test_b12x_micro_routing_uniform_exact(b12x_ops):
+    """Tiny decode routing uses the 64x128 micro tile exactly."""
+    _assert_uniform_routing_exact(b12x_ops, tokens=8)
+
+
+@pytest.mark.sm120
 def test_b12x_dynamic_routing_uniform_exact(b12x_ops):
     """The smallest dynamic-cutover case routes and computes exactly."""
     _assert_uniform_routing_exact(b12x_ops, tokens=641)

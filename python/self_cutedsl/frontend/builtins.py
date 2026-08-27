@@ -994,7 +994,7 @@ def copy_sf(tc, src, dst):
     one b32 per atom; SFA bytes = SF[row = atom_base + lane//4 +
     8*(lane%2)][kg 0..3]; SFB bytes = SF[col = atom_base + lane//4]
     [kg 0..3] (k-group base = kb*4, nvfp4 sf_vec 16)."""
-    from .cute_objects import _flatten
+    from .cute_objects import _blockscaled_warp_tile, _flatten
 
     e = _emitter()
     view = src if hasattr(src, "tile") else dst
@@ -1008,6 +1008,9 @@ def copy_sf(tc, src, dst):
     stages = int(top_shape[-1]) if len(top_shape) >= 3 else 1
     bytes_per_stage = int(arr.count) // max(1, stages)
     kgs = max(1, bytes_per_stage // rows)
+    # Canonical SM120 SF storage pads the M block to 128 rows even when the
+    # live micro CTA tile is 64 rows; consecutive K64 blocks remain 512 B apart.
+    sf_storage_rows = max(128, rows)
     kb = int(getattr(view, "k", 0) or 0)
 
     tidx = _ix(e, tc.tidx)
@@ -1017,6 +1020,8 @@ def copy_sf(tc, src, dst):
     # row-major layout makes N the fast warp coordinate.
     wm = _ixop(e, "arith.divsi", wid, _ix(e, 2))
     wn = _ixop(e, "arith.remsi", wid, _ix(e, 2))
+    mma = getattr(tc, "_tiled_mma", None)
+    warp_m = _blockscaled_warp_tile(mma)[0] if mma is not None else 64
 
     which = getattr(tc, "which", None)
     if which not in ("A", "B"):
@@ -1042,12 +1047,12 @@ def copy_sf(tc, src, dst):
                      _ixop(e, "arith.addi",
                            _ixop(e, "arith.muli", i32p, _ix(e, 16)),
                            _ixop(e, "arith.muli", i4p, _ix(e, 4))),
-                     _ix(e, int(kb) * rows * 4))
+                     _ix(e, int(kb) * sf_storage_rows * 4))
 
     if is_a:
-        for i in range(4):                             # m-atoms (warp 64)
+        for i in range(warp_m // 16):
             r = _ixop(e, "arith.addi",
-                      _ixop(e, "arith.muli", wm, _ix(e, 64)),
+                      _ixop(e, "arith.muli", wm, _ix(e, warp_m)),
                       _ix(e, i * 16))
             r = _ixop(e, "arith.addi", r, l4)
             r = _ixop(e, "arith.addi", r, _ixop(e, "arith.muli", l2, _ix(e, 8)))
