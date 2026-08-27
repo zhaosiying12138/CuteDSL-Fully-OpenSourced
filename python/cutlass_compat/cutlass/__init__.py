@@ -12,7 +12,8 @@ from . import cute  # noqa: F401  (cutlass.cute)
 from . import torch  # noqa: F401  (cutlass.torch)
 from . import pipeline  # noqa: F401  (cutlass.pipeline)
 from . import utils  # noqa: F401  (cutlass.utils)
-from .dtypes import (  # noqa: F401
+from .dtypes import (Uint8, Uint32, Uint64,
+      # noqa: F401
     Int8, Int16,
     Boolean,
     Constexpr,
@@ -34,6 +35,11 @@ from .cuda import initialize_cuda_context  # noqa: F401
 __self_cutedsl__ = True
 
 __version__ = "0.1.0+compat"
+
+
+def range_constexpr(*args, **kw):
+    """cutlass.range_constexpr(n) — trace-time unrolled range."""
+    return range(*args, **kw)
 
 
 def const_expr(cond):

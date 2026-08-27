@@ -145,6 +145,12 @@ def make_fragment_like(part):
     from .kernel_objects import Fragment
     from .meta import F32
 
+    tc = getattr(part, "tc", None)
+    if tc is not None and hasattr(tc, "tv"):  # TVCopyAsync partition
+        T, R, V, B = part._geom
+        elem = getattr(getattr(part.tensor, "element", None), "name", "f16")
+        from .meta import F16
+        return Fragment(V * B, F16 if elem in ("f16", "Float16") else F32)
     return Fragment(part.tc.vals_per_thread, F32)
 
 
@@ -152,8 +158,18 @@ def make_rmem_tensor(shape, dtype):
     from .kernel_objects import Fragment
     from .meta import BOOL
 
-    dims = tuple(int(d) for d in
-                 (shape if isinstance(shape, (tuple, list)) else (shape,)))
+    def _flatten_shape(x):
+        out = []
+        for d in (x if isinstance(x, (tuple, list)) else (x,)):
+            if isinstance(d, (tuple, list)):
+                out.extend(_flatten_shape(d))
+            elif hasattr(d, "shape"):
+                out.extend(_flatten_shape(d.shape))
+            else:
+                out.append(int(d))
+        return out
+
+    dims = tuple(_flatten_shape(shape))
     n = 1
     for d in dims:
         n *= d
@@ -166,6 +182,19 @@ def make_rmem_tensor(shape, dtype):
 def elem_less(coord, shape):
     e = _emitter()
     from .kernel_objects import CoordPair
+
+    if hasattr(coord, "col"):  # CoordPair / _CoordUnit
+        if isinstance(shape, (tuple, list)):
+            m, n = int(shape[0]), int(shape[1])
+            r_ok = e.cmpi_slt_const(coord.row, m)
+            c_ok = e.cmpi_slt_const(coord.col, n)
+            return e.ssa("i1", f"arith.andi {r_ok.name}, {c_ok.name} : i1")
+        c_ok = e.cmpi_slt_const(coord.col, int(shape))
+        return c_ok
+    # single SSA/index coordinate vs scalar limit
+    if isinstance(shape, (tuple, list)):
+        shape = shape[1] if len(shape) > 1 else shape[0]
+    return e.cmpi_slt_const(coord, int(shape))
 
     assert isinstance(coord, CoordPair)
     m, n = int(shape[0]), int(shape[1])
@@ -347,6 +376,11 @@ class SmemArray:
 
         if layout is None:
             return self
+        if hasattr(layout, "shape") and hasattr(layout, "stride") \
+                and not isinstance(layout, HostLayout):
+            from .cute_objects import Layout as _L
+
+            layout = _L(layout.shape, layout.stride)
         if not isinstance(layout, HostLayout):
             from .cute_objects import make_layout as _ml
 
@@ -857,6 +891,8 @@ def frag_to(view, dtype):
     for v in view.values:
         if dtype.name in ("f16", "Float16") and v.type == "f32":
             out.append(e.ssa("f16", f"arith.truncf {v.name} : f32 to f16"))
+        elif dtype.name in ("f32", "Float32") and v.type == "f16":
+            out.append(e.ssa("f32", f"llvm.fpext {v.name} : f16 to f32"))
         else:
             out.append(v)
     from .kernel_objects import FragmentView
@@ -1308,8 +1344,18 @@ def make_rmem_tensor(shape, dtype):
     from .kernel_objects import Fragment
     from .meta import BOOL, F32, F16
 
-    dims = tuple(int(d) for d in
-                 (shape if isinstance(shape, (tuple, list)) else (shape,)))
+    def _flat_sh(x):
+        out = []
+        for d in (x if isinstance(x, (tuple, list)) else (x,)):
+            if isinstance(d, (tuple, list)):
+                out.extend(_flat_sh(d))
+            elif hasattr(d, "shape"):
+                out.extend(_flat_sh(d.shape))
+            else:
+                out.append(int(d))
+        return out
+
+    dims = tuple(_flat_sh(shape))
     n = 1
     for d in dims:
         n *= d

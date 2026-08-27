@@ -50,6 +50,10 @@ def compile_mlir_to_ptx(mlir_text: str | Path, extra_passes: list[str] | None = 
                 f.write(mlir_text)
         raise RuntimeError(
             f"cutlass-compiler failed ({proc.returncode}):\n{proc.stderr[:4000]}")
+    import os as _os2
+    if _os2.environ.get("DG_DUMP_MLIR_OK"):
+        with open("/tmp/ok_mod.mlir", "w") as f:
+            f.write(mlir_text)
     out = proc.stdout
 
     targets = re.findall(r'#nvvm\.target<chip = "([^"]+)"', out)

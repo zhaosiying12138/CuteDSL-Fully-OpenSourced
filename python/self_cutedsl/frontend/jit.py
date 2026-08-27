@@ -27,6 +27,20 @@ from . import builtins as _builtins
 from .interp import InterpError, KernelInterpreter, KernelParam
 
 
+class DynGridExpr:
+    """Lazy launch-grid arithmetic over runtime scalar ABI arguments."""
+
+    def __init__(self, fn, desc):
+        self.fn = fn          # dict name->value  -> int
+        self.desc = desc
+
+    def __call__(self, vals):
+        return int(self.fn(vals))
+
+    def __repr__(self):
+        return f"<dyn-grid {self.desc}>"
+
+
 class DynamicHostValue:
     """A runtime scalar known only at launch (kernel ABI argument)."""
 
@@ -35,6 +49,34 @@ class DynamicHostValue:
 
     def __repr__(self):
         return f"<dyn {self.name}:{self.dtype.name}>"
+
+    def _expr(self, op, other=None, rev=False):
+        n = self.name
+
+        def _i(v):
+            if hasattr(v, "value") and not hasattr(v, "name"):
+                return int(v.value)
+            if hasattr(v, "ssa") and hasattr(v, "value"):
+                return int(v.value)
+            return int(v)
+
+        if op == "ceil_div":
+            return DynGridExpr(lambda v, n=n, b=int(other), _i=_i: -(-_i(v[n]) // b),
+                               f"ceil_div({n},{other})")
+        if op == "neg":
+            return DynGridExpr(lambda v, n=n, _i=_i: -_i(v[n]), f"-{n}")
+        raise TypeError(op)
+
+    def __neg__(self):
+        return self._expr("neg")
+
+    def __floordiv__(self, b):
+        return DynGridExpr(lambda v, n=self.name, b=int(b), _i=None: int(v[n]) // b,
+                           f"{self.name}//{b}")
+
+    def __rfloordiv__(self, a):
+        return DynGridExpr(lambda v, a=int(a), n=self.name: a // int(v[n]),
+                           f"{a}//{self.name}")
 
 
 @dataclass
@@ -123,7 +165,19 @@ class _KernelCallStub:
                 abi.append(("jit", p.name, mlir_ty))
         # persistent schedulers address CTAs by linear ctaid.x — flatten
         # an (x,y,z) grid request into x-major
-        gx = int(grid[0]) * int(grid[1]) * int(grid[2]) if len(grid) == 3             else int(grid[0])
+        def _gx(e, runtime_vals=None):
+            return e(runtime_vals) if isinstance(e, DynGridExpr) else int(e)
+        if len(grid) == 3:
+            g0, g1, g2 = grid
+            if any(isinstance(g, DynGridExpr) for g in (g0, g1, g2)):
+                gx = DynGridExpr(
+                    lambda v, a=g0, b=g1, c=g2:
+                        _gx(a, v) * _gx(b, v) * _gx(c, v),
+                    "grid3")
+            else:
+                gx = int(g0) * int(g1) * int(g2)
+        else:
+            gx = grid[0]
         _host_trace["records"].append(
             _KernelRecord(emitter, (gx, 1, 1), tuple(block), abi))
 
@@ -167,11 +221,24 @@ class JitFunction:
         return self
 
     # ------------------------------------------------------------- helpers
-    def _bind(self, args):
+    def _bind(self, args, kwargs=None):
         bound = {}
         key_parts = []
         tensors = {}
         params = self._params
+        if _host_trace.get("active") is not None:
+            # nested @cute.jit call during an active trace: values are
+            # trace-time objects (views, fragments, plain ints) — bind
+            # verbatim; the body executes inline into the outer trace.
+            kw = kwargs or {}
+            for i, p in enumerate(params):
+                if p.name in kw:
+                    bound[p.name] = kw.pop(p.name)
+                else:
+                    bound[p.name] = args[i] if i < len(args) else p.default
+            if getattr(self, "_bound_self", None) is not None:
+                bound["self"] = self._bound_self
+            return bound, (), {}
         for i, p in enumerate(params):
             v = args[i] if i < len(args) else p.default
             if _DEBUG_BIND:
@@ -194,6 +261,9 @@ class JitFunction:
                 tensors[p.name] = v
                 _host_trace.setdefault("tensor_names", {})[id(v)] = p.name
                 key_parts.append((p.name, v.shape, v.stride, v.element_type.name))
+            elif p.name == "stream" or hasattr(v, "cuda_stream") or \
+                    type(v).__name__ in ("_FakeStream", "CUstream"):
+                bound[p.name] = v  # stream handle: launch-time, not an ABI arg
             else:
                 bound[p.name] = DynamicHostValue(p.name, p.dtype or _i32())
                 _host_trace_runtime[p.name] = v
@@ -226,7 +296,7 @@ class JitFunction:
         while len(args) < len(self._params):
             args.append(self._params[len(args)].default)
 
-        bound, key, tensors = self._bind(args)
+        bound, key, tensors = self._bind(args, kwargs)
         cached = self._cache.get(key)
 
         if cached is None:
@@ -265,6 +335,16 @@ class JitFunction:
                     vals.append(_host_trace_tma[entry[1]].device_copy)
                 else:
                     vals.append(_host_trace_runtime[entry[1]])
+            rec_emitter_printf = getattr(manifest, "uses_printf", False)
+            rt = {e[1]: vals[i] for i, e in enumerate(abi)
+                  if e[0] not in ("tensor", "tma")}
+            g = manifest.grid
+            if any(hasattr(x, "fn") for x in g):
+                g = tuple(x(rt) if hasattr(x, "fn") else x for x in g)
+                manifest = LaunchManifest(entry=manifest.entry,
+                                          args=manifest.args, grid=g,
+                                          block=manifest.block)
+                manifest.uses_printf = rec_emitter_printf
             jit.launch(manifest, *vals)
             needs_sync = needs_sync or getattr(manifest, "uses_printf", False)
         if needs_sync:
@@ -280,10 +360,10 @@ class JitFunction:
                 and len(args) == len(self._params) + 1:
             args = args[1:]
         # host-level execution without a new trace context
-        bound, key, tensors = self._bind(list(args))
-        return self._trace_with(bound, list(args))
+        bound, key, tensors = self._bind(list(args), kwargs)
+        return self._trace_with(bound, list(args), nested=True)
 
-    def _trace_with(self, bound, args):
+    def _trace_with(self, bound, args, nested=False):
         src = textwrap.dedent(_strip_decorators(inspect.getsource(self.fn)))
         ns = dict(self.fn.__globals__)
         ns.update(bound)
@@ -291,16 +371,31 @@ class JitFunction:
             ns["self"] = self._bound_self
         elif self._has_self:
             ns["self"] = None
-        _host_trace.update(active=self, records=[])
+        # nested calls inline into the OUTER trace: preserve its state and
+        # propagate the callee's return value to the caller's trace
+        outer_active = _host_trace.get("active")
+        outer_records = _host_trace.get("records")
+        _host_trace.update(active=self, records=outer_records or [])
+        ret_box = []
         try:
             exec(compile(src, f"<jit:{self.__name__}>", "exec"), ns)
             call_vals = [bound[p.name] for p in self._params]
             if self._has_self:
                 call_vals = [self._bound_self] + call_vals
-            ns[self.fn.__name__](*call_vals)
+
+            def _invoke():
+                ret_box.append(ns[self.fn.__name__](*call_vals))
+
+            _invoke()
+            if nested:
+                return ret_box[0] if ret_box else None
             return list(_host_trace["records"])
         finally:
-            _host_trace.update(active=None, records=[])
+            if nested:
+                _host_trace.update(active=outer_active,
+                                   records=outer_records or [])
+            else:
+                _host_trace.update(active=None, records=[])
 
     def _trace(self, bound, args):
         src = textwrap.dedent(_strip_decorators(inspect.getsource(self.fn)))
@@ -392,8 +487,17 @@ class _CompiledCallable:
 
     def __call__(self, *dyn_args):
         merged = list(self._prime)
+        # tensors AND runtime scalars are re-bound positionally: only the
+        # captured non-arg options (streams etc. beyond the prime arity)
+        # stay from compile time
         for slot, new in zip(self._tensor_slots, dyn_args):
             merged[slot] = new
+        for i, new in enumerate(dyn_args):
+            if i < len(merged) and i not in self._tensor_slots:
+                old = merged[i]
+                if isinstance(old, (bool, int, float)) or \
+                        (hasattr(old, "ssa") and hasattr(old, "value")):
+                    merged[i] = new
         return self._fn(*merged)
 
 

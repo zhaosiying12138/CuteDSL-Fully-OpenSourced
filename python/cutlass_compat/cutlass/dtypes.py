@@ -24,8 +24,14 @@ class _DType:
         return self.name
 
     def __call__(self, value):
-        # dtype instances double as conversion functions (cutlass.Int32(7)).
-        return TypedValue(value, self)
+        # dtype instances double as conversion functions (cutlass.Int32(7));
+        # official support code relies on the result being a typed scalar
+        # carrying SSA / literal + ir_value()
+        try:
+            from cutlass import cutlass_dsl as _cdsl
+            return _cdsl._typed_from_dtype(self, value=value)
+        except ImportError:
+            return TypedValue(value, self)
 
     def __str__(self):
         return self.name
@@ -41,6 +47,10 @@ Int16 = _DType("Int16", "i16", 16)
 Int32 = _DType("Int32", "i32", 32)
 Int64 = _DType("Int64", "i64", 64)
 UInt32 = _DType("UInt32", "i32", 32)
+Uint8 = _DType("Uint8", "i8", 8)
+Uint16 = _DType("Uint16", "i16", 16)
+Uint32 = _DType("Uint32", "i32", 32)
+Uint64 = _DType("Uint64", "i64", 64)
 Float32 = _DType("Float32", "f32", 32)
 Float16 = _DType("Float16", "f16", 16)
 BFloat16 = _DType("BFloat16", "bf16", 16)
@@ -53,8 +63,13 @@ Numeric = _DType("Numeric", "i32", 32)
 Boolean = _DType("Boolean", "i1", 1)
 
 _BY_NAME = {d.name: d for d in
-            (Int32, Int64, UInt32, Float32, Float16, BFloat16,
+            (Int8, Int32, Int64, UInt32, Uint8, Uint16, Uint32, Uint64,
+             Float32, Float16, BFloat16,
              Float8E4M3FN, Float8E5M2, Float8E8M0FNU, Float4E2M1FN)}
+# unsigned aliases share the i32/i64 MLIR text (signedness is nominal here)
+_BY_NAME["UInt64"] = Int64
+_BY_NAME["UInt8"] = Uint8
+_BY_NAME["UInt16"] = Uint16
 
 
 def dtype(name: str) -> _DType:

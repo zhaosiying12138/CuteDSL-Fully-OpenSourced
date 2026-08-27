@@ -33,6 +33,19 @@ class KernelTensor:
         self._element_type = v
 
     @property
+    def layout(self):
+        from self_cutedsl.frontend.cute_objects import Layout
+
+        shp = tuple(self.meta.shape)
+        strd = tuple(getattr(self.meta, "stride", None)
+                     or _row_major_of(shp))
+        return Layout(shp, strd)
+
+    @property
+    def iterator(self):
+        return _IterPtr(self.ptr, self)
+
+    @property
     def is_tiled(self) -> bool:
         from .meta import TiledTensorMeta
 
@@ -101,7 +114,17 @@ class Fragment:
         return self.slots[int(i)]
 
     def __setitem__(self, i, v):
+        if isinstance(i, (tuple, list)):
+            dims = getattr(self, "dims", None) or (self.count,)
+            lin = 0
+            for c, d in zip(i, dims):
+                lin = lin * d + int(c)
+            i = lin
         self.slots[int(i)] = v
+
+    @property
+    def element_type(self):
+        return self.elem
 
     def fill(self, value):
         """accumulators.fill(0.0) — all slots to a constant."""
@@ -112,6 +135,26 @@ class Fragment:
         e = _emitter()
         for i in range(self.count):
             self.slots[i] = e.ssa("f32", "arith.constant 0.0 : f32")
+
+    def reduce(self, op, init_val=None, reduction_profile=0):
+        """Fold per-element values with op into one f32 SSA (init_val is a
+        TypedScalar / SSA / plain float identity)."""
+        from . import builtins as _b
+        from cutlass._bridge_helpers import TypedScalar
+        e = _b._emitter()
+        if isinstance(init_val, TypedScalar):
+            if init_val.ssa is None:
+                init_val.ir_value()
+            acc = init_val.ssa
+        elif isinstance(init_val, SSA):
+            acc = init_val
+        else:
+            acc = e.ssa("f32", f"arith.constant {float(init_val if init_val is not None else 0.0)!r} : f32")
+        view = self.load()
+        for v in view.values:
+            acc = e.ssa(acc.type, f"arith.addf {acc.name}, {v.name} : {acc.type}")
+        from cutlass import Float32
+        return Float32(acc)
 
     def load(self) -> "FragmentView":
         if self.vecs:
@@ -214,6 +257,25 @@ class FragmentView:
         self.values = values or []
         self.vecs = vecs or []
 
+    def reduce(self, op, init_val=None, reduction_profile=0):
+        """Fold element values with op into one f32 value."""
+        from . import builtins as _b
+        from cutlass._bridge_helpers import TypedScalar
+        e = _b._emitter()
+        if isinstance(init_val, TypedScalar):
+            if init_val.ssa is None:
+                init_val.ir_value()
+            acc = init_val.ssa
+        elif isinstance(init_val, SSA):
+            acc = init_val
+        else:
+            acc = e.ssa("f32",
+                        f"arith.constant {float(init_val if init_val is not None else 0.0)!r} : f32")
+        for v in self.values:
+            acc = e.ssa(acc.type, f"arith.addf {acc.name}, {v.name} : {acc.type}")
+        from cutlass import Float32
+        return Float32(acc)
+
     def __add__(self, other: "FragmentView") -> "FragmentView":
         raise NotImplementedError("interpreter handles FragmentView arithmetic")
 
@@ -226,3 +288,56 @@ class CoordPair:
 
     def __repr__(self):
         return f"<coord ({self.row.name}, {self.col.name})>"
+
+
+def _row_major_of(shape):
+    st = [1]
+    for d in reversed(shape[1:]):
+        st.insert(0, st[0] * d)
+    return tuple(st)
+
+
+class _IterPtr:
+    """tensor.iterator + offset — official pointer arithmetic; carries
+    .llvm_ptr (raw SSA) for inline-asm address computation."""
+
+    def __init__(self, ptr, kt):
+        self.ptr = ptr
+        self.kt = kt
+
+    @property
+    def llvm_ptr(self):
+        return self.ptr
+
+    @property
+    def base(self):
+        return self.kt
+
+    def _off_ssa(self, other):
+        from cutlass._bridge_helpers import _emitter
+        e = _emitter()
+        if hasattr(other, "ssa"):  # TypedScalar
+            v = other.ssa
+            if v is None:
+                other.ir_value()
+                v = other.ssa
+        elif hasattr(other, "name"):
+            v = other
+        else:
+            v = e.ssa("i32", f"arith.constant {int(other)} : i32")
+        if v.type == "index":
+            v = e.ssa("i32", f"arith.index_cast {v.name} : index to i32")
+        return v
+
+    def __add__(self, other):
+        from cutlass._bridge_helpers import _emitter
+        e = _emitter()
+        off = self._off_ssa(other)
+        elem = getattr(getattr(self.kt, "meta", None), "element_type", None)
+        ety = {"Float16": "f16", "Float32": "f32", "Uint8": "i8",
+               "Int32": "i32"}.get(getattr(elem, "name", ""), "f16")
+        p = e.gep(self.ptr, off, ety)
+        return _IterPtr(p, self.kt)
+
+    def __radd__(self, other):
+        return self.__add__(other)

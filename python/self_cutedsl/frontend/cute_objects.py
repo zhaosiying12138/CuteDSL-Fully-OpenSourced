@@ -165,6 +165,18 @@ class Tensor:
         return self.layout.shape
 
     @property
+    def element_type(self):
+        return self.element
+
+    @property
+    def iterator(self):
+        return self
+
+    @property
+    def dtype(self):
+        return self.element
+
+    @property
     def type(self):
         return f"cutlass.Tensor(element={getattr(self.element, 'name', '?')}, shape={self.shape})"
 

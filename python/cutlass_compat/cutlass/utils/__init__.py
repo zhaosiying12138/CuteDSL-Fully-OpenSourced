@@ -91,6 +91,15 @@ class SmemAllocator:
             else type(shared_storage)
         return SharedStorageView(cls, self._id)
 
+    # -- official flashinfer-style API ----------------------------------
+    def allocate_tensor(self, elem, layout, byte_alignment=16):
+        from cutlass.cute._fi_arch import _alloc_tensor
+        return _alloc_tensor(self, elem, layout, byte_alignment)
+
+    def allocate_array(self, dtype, num_elems=1):
+        from cutlass.cute._fi_arch import _alloc_array
+        return _alloc_array(self, dtype, num_elems)
+
 
 class SharedStorageView:
     """Realizes a @cute.struct class into shared memory: each MemRange

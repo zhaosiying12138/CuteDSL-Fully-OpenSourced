@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 
+class CopyG2SOp:
+    """cp.async 16B global->shared atom (flashinfer rmsnorm load path)."""
+
+
 class CopyBulkTensorTileG2SOp:
     pass
 

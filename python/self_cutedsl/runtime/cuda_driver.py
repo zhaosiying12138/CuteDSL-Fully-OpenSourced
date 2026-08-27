@@ -119,6 +119,12 @@ class DriverJit:
 
 def _pack_args(manifest: LaunchManifest, args: Sequence[Any]) -> ctypes.Array:
     """Pack kernel args per manifest signature into a cuLaunchKernel arg buffer."""
+    def _num(v):
+        # bridge TypedScalars carry their literal payload
+        if hasattr(v, "value") and hasattr(v, "ssa"):
+            return v.value
+        return v
+
     holders = []
     for spec, val in zip(manifest.args, args):
         t = spec["type"]
@@ -126,13 +132,13 @@ def _pack_args(manifest: LaunchManifest, args: Sequence[Any]) -> ctypes.Array:
             ptr = _device_ptr(val)
             holders.append((ctypes.c_void_p(ptr), ctypes.c_void_p))
         elif t in ("i32", "u32"):
-            holders.append((ctypes.c_uint32(int(val)), ctypes.c_uint32))
+            holders.append((ctypes.c_uint32(int(_num(val))), ctypes.c_uint32))
         elif t in ("i64", "u64"):
-            holders.append((ctypes.c_uint64(int(val)), ctypes.c_uint64))
+            holders.append((ctypes.c_uint64(int(_num(val))), ctypes.c_uint64))
         elif t == "f32":
-            holders.append((ctypes.c_float(float(val)), ctypes.c_float))
+            holders.append((ctypes.c_float(float(_num(val))), ctypes.c_float))
         elif t == "f64":
-            holders.append((ctypes.c_double(float(val)), ctypes.c_double))
+            holders.append((ctypes.c_double(float(_num(val))), ctypes.c_double))
         else:
             raise ValueError(f"unsupported arg type {t!r}")
     arr = (ctypes.c_void_p * len(holders))()

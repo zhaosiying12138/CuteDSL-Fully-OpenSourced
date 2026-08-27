@@ -22,6 +22,73 @@ class SSA:
     def __repr__(self):
         return f"<SSA {self.name}:{self.type}>"
 
+    # -- raw-SSA arithmetic (official support code mixes SSA scalars with
+    #    Python ints; previously these raised TypeError) --------------------
+    def _bin(self, other, iop, fop):
+        from cutlass._bridge_helpers import _emitter as _E
+        e = _E()
+        if hasattr(other, "ssa"):
+            o = other.ssa
+            if o is None:
+                other.ir_value()
+                o = other.ssa
+        elif isinstance(other, SSA):
+            o = other
+        else:
+            ty = "f32" if self.type.startswith("f") else self.type
+            o = e.ssa(ty, (f"arith.constant {float(other)!r} : f32" if ty == "f32"
+                           else f"arith.constant {int(other)} : {ty}"))
+        a, b = self, o
+        if a.type != b.type:
+            if "f" in (a.type[0], b.type[0]):
+                raise TypeError(f"SSA {a.type} vs {b.type}")
+            if b.type == "i32" and a.type == "index":
+                b = e.ssa("index", f"arith.index_cast {b.name} : i32 to index")
+            elif a.type == "i32" and b.type == "index":
+                a = e.ssa("index", f"arith.index_cast {a.name} : i32 to index")
+            elif b.type == "i64":
+                a = e.ssa("i64", f"arith.extsi {a.name} : {a.type} to i64")
+            elif a.type == "i64":
+                b = e.ssa("i64", f"arith.extsi {b.name} : {b.type} to i64")
+        op = fop if a.type.startswith("f") else iop
+        return e.ssa(a.type, f"{op} {a.name}, {b.name} : {a.type}")
+
+    def __add__(self, o):
+        return self._bin(o, "arith.addi", "arith.addf")
+
+    def __radd__(self, o):
+        return self._bin(o, "arith.addi", "arith.addf")
+
+    def __sub__(self, o):
+        return self._bin(o, "arith.subi", "arith.subf")
+
+    def __rsub__(self, o):
+        e = self  # note: non-commutative — build other - self
+        from cutlass._bridge_helpers import _emitter as _E
+        ee = _E()
+        if hasattr(o, "ssa"):
+            b = o.ssa
+        elif isinstance(o, SSA):
+            b = o
+        else:
+            ty = "f32" if self.type.startswith("f") else self.type
+            b = ee.ssa(ty, (f"arith.constant {float(o)!r} : f32" if ty == "f32"
+                            else f"arith.constant {int(o)} : {ty}"))
+        op = "arith.subf" if self.type.startswith("f") else "arith.subi"
+        return ee.ssa(self.type, f"{op} {b.name}, {self.name} : {self.type}")
+
+    def __mul__(self, o):
+        return self._bin(o, "arith.muli", "arith.mulf")
+
+    def __rmul__(self, o):
+        return self._bin(o, "arith.muli", "arith.mulf")
+
+    def __floordiv__(self, o):
+        return self._bin(o, "arith.divsi", "arith.divf")
+
+    def __mod__(self, o):
+        return self._bin(o, "arith.remsi", "arith.divf")
+
 
 class KernelEmitter:
     """Accumulates the body of one gpu.func."""
@@ -117,8 +184,12 @@ class KernelEmitter:
         assert v.type == "index", f"index_to_i64 on {v.type}"
         return self.ssa("i64", f"arith.index_cast {v.name} : index to i64")
 
-    def gep(self, base: SSA, offset: SSA, elem_type: str = "f32") -> SSA:
-        off = self.index_to_i64(offset) if offset.type in ("index", "i32") else offset
+    def gep(self, base: SSA, offset, elem_type: str = "f32") -> SSA:
+        if isinstance(offset, int):
+            offset = self.ssa("i64", f"arith.constant {int(offset)} : i64")
+        elif offset.type == "i32":
+            offset = self.ssa("i64", f"arith.extsi {offset.name} : i32 to i64")
+        off = self.index_to_i64(offset) if offset.type == "index" else offset
         return self.ssa(
             base.type,
             f"llvm.getelementptr {base.name}[{off.name}] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, {elem_type}",

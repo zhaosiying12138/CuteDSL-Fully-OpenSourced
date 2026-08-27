@@ -573,9 +573,50 @@ class KernelInterpreter:
         return _single_ssa(self.eval(slice_node))
 
     # -- raw pointer element access (M2 tensors-as-pointers ABI) -------------
+
+    def _flat_coord(self, idx, elem_meta=None):
+        """Flatten (r, c[, ...]) SSA/int coordinates through the tensor's
+        strides into a single i64/i32 offset SSA (or int)."""
+        if not isinstance(idx, (tuple, list)):
+            return idx
+        strides = None
+        if elem_meta is not None:
+            strides = getattr(elem_meta, "stride", None)
+        if not strides:
+            strides = tuple(1 for _ in idx)  # fallback: contiguous
+        from .emitter import SSA as _SSA
+        e = self.emitter
+        total = None
+        for c, st in zip(idx, strides):
+            v = c
+            if hasattr(v, "ssa"):
+                if v.ssa is None:
+                    v.ir_value()
+                v = v.ssa
+            if isinstance(v, _SSA):
+                if v.type == "index":
+                    v = e.ssa("i64", f"arith.index_cast {v.name} : index to i64")
+                elif v.type == "i32":
+                    v = e.ssa("i64", f"arith.extsi {v.name} : i32 to i64")
+            else:
+                v = int(v) * int(st)
+                if isinstance(v, int):
+                    if total is None:
+                        total = v
+                    else:
+                        total = total + v
+                    continue
+            term = e.ssa("i64", f"arith.muli {v.name}, "
+                                f"{e.ssa('i64', f'arith.constant {int(st)} : i64').name} : i64") \
+                if int(st) != 1 else v
+            total = term if total is None else \
+                e.ssa("i64", f"arith.addi {total.name}, {term.name} : i64")
+        return total
+
     def _load_elem(self, base: SSA, idx, elem=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript load needs a pointer, got {base!r}"
+        idx = self._flat_coord(idx)
         ety = "f16" if getattr(elem, "name", "") == "f16" else "f32"
         p = self.emitter.gep(base, idx, ety)
         if ety == "f16":
@@ -585,16 +626,41 @@ class KernelInterpreter:
     def _store_elem(self, base: SSA, idx, val, elem=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript store needs a pointer, got {base!r}"
-        ety = "f16" if getattr(elem, "name", "") == "f16" else "f32"
+        idx = self._flat_coord(idx)
+        _n = getattr(elem, "name", "")
+        ety = {"f16": "f16", "Float16": "f16", "float16": "f16",
+               "f32": "f32", "Float32": "f32", "float32": "f32",
+               "i8": "i8", "Uint8": "i8", "Int8": "i8", "uint8": "i8",
+               "i32": "i32", "Int32": "i32", "Uint32": "i32",
+               "int32": "i32", "i64": "i64", "Int64": "i64"}.get(_n, "f32")
+        if hasattr(val, "ssa"):  # bridge TypedScalar
+            if val.ssa is None:
+                val.ir_value()
+            val = val.ssa
         p = self.emitter.gep(base, idx, ety)
         if isinstance(val, (int, float)):
-            v = float(val)
-            val = self.emitter.ssa(ety, f"arith.constant {v} : {ety}")
+            vv = int(val) if ety.startswith("i") else float(val)
+            val = self.emitter.ssa(ety, f"arith.constant {vv} : {ety}")
+        elif getattr(val, "type", None) and val.type != ety:
+            vt, val_t = val.type, ety
+            if vt == "i32" and val_t == "i8":
+                val = self.emitter.ssa("i8", f"arith.trunci {val.name} : i32 to i8")
+            elif vt == "i8" and val_t == "i32":
+                val = self.emitter.ssa("i32", f"arith.extsi {val.name} : i8 to i32")
+            elif vt == "i64" and val_t == "i32":
+                val = self.emitter.ssa("i32", f"arith.trunci {val.name} : i64 to i32")
+            elif vt == "f32" and val_t == "f16":
+                val = self.emitter.ssa("f16", f"arith.truncf {val.name} : f32 to f16")
+            elif vt == "f16" and val_t == "f32":
+                val = self.emitter.ssa("f32", f"llvm.fpext {val.name} : f16 to f32")
         if ety == "f16":
             self.emitter.store_smem_f16(val, p) if p.type.startswith("!llvm.ptr<3") else \
                 self.emitter.raw(f"llvm.store {val.name}, {p.name} : f16, !llvm.ptr<1>")
             return
-        self.emitter.store_f32(val, p)
+        if ety == "f32":
+            self.emitter.store_f32(val, p)
+            return
+        self.emitter.raw(f"llvm.store {val.name}, {p.name} : {ety}, {p.type}")
 
     def binop(self, op, lhs, rhs):
         lhs = _unwrap_typed_scalar(lhs)
@@ -603,7 +669,9 @@ class KernelInterpreter:
         arith = {
             ast.Add: "arith.addi", ast.Sub: "arith.subi", ast.Mult: "arith.muli",
             ast.FloorDiv: "arith.divsi", ast.Mod: "arith.remsi",
-            ast.Div: "arith.divi",
+            ast.Div: "arith.divi", ast.BitAnd: "arith.andi",
+            ast.BitOr: "arith.ori", ast.BitXor: "arith.xori",
+            ast.LShift: "arith.shli", ast.RShift: "arith.shrsi",
         }.get(type(op))
         if arith is None:
             if isinstance(op, ast.Add) and not py_only:
@@ -614,6 +682,39 @@ class KernelInterpreter:
                 raise InterpError(f"unsupported binop {op}")
         from .kernel_objects import FragmentView as _FV
 
+        _fvops = {ast.Add: "addf", ast.Sub: "subf",
+                  ast.Mult: "mulf", ast.Div: "divf"}
+        if isinstance(lhs, _FV) or isinstance(rhs, _FV):
+            if type(op) not in _fvops:
+                raise InterpError(f"unsupported FragmentView binop {op}")
+            _o = _fvops[type(op)]
+            if isinstance(lhs, _FV) and isinstance(rhs, _FV):
+                if lhs.vecs and rhs.vecs:
+                    vecs = []
+                    for x, y in zip(lhs.vecs, rhs.vecs):
+                        vecs.append(self.emitter.ssa(
+                            x.type, f"arith.{_o} {x.name}, {y.name} : {x.type}"))
+                    return _FV(vecs=vecs)
+                vals = []
+                for x, y in zip(lhs.values, rhs.values):
+                    vals.append(self.emitter.ssa(
+                        x.type, f"arith.{_o} {x.name}, {y.name} : {x.type}"))
+                return _FV(vals)
+            # scalar broadcast
+            fv, scal, rev = (lhs, rhs, False) if isinstance(lhs, _FV) else (rhs, lhs, True)
+            scal = _unwrap_typed_scalar(scal)
+            scal_ssa = scal if isinstance(scal, SSA) else None
+            vals = []
+            for x in (fv.values or []):
+                if scal_ssa is None:
+                    c = self._const_like(x, float(scal))
+                    y = c
+                else:
+                    y = self._pair_ssa(x, scal_ssa)
+                a, b = (x, y) if not rev else (y, x)
+                vals.append(self.emitter.ssa(
+                    x.type, f"arith.{_o} {a.name}, {b.name} : {x.type}"))
+            return _FV(vals)
         if isinstance(lhs, _FV) and isinstance(rhs, _FV):
             if not isinstance(op, ast.Add):
                 raise InterpError("only FragmentView + FragmentView supported")
@@ -670,8 +771,29 @@ class KernelInterpreter:
         if not isinstance(rhs, SSA):
             rhs = self._const_like(lhs, rhs)
         if lhs.type != rhs.type:
-            raise InterpError(f"type mismatch {lhs.type} vs {rhs.type}")
+            # integer-domain promotion: index <-> i32/i64 (thread coords
+            # vs runtime scalars mix freely in official kernels)
+            pair = (lhs.type, rhs.type)
+            if "f32" in pair or "f16" in pair:
+                raise InterpError(f"type mismatch {lhs.type} vs {rhs.type}")
+            if lhs.type == "index":
+                rhs = self.emitter.ssa(
+                    "index", f"arith.index_cast {rhs.name} : {rhs.type} to index")
+            elif rhs.type == "index":
+                lhs = self.emitter.ssa(
+                    "index", f"arith.index_cast {lhs.name} : {lhs.type} to index")
+            else:
+                raise InterpError(f"type mismatch {lhs.type} vs {rhs.type}")
         return lhs, rhs
+
+    def _pair_ssa(self, a: SSA, b: SSA) -> SSA:
+        if a.type == b.type:
+            return b
+        if a.type == "f32" and b.type in ("i32", "index"):
+            return self.emitter.ssa("f32", f"arith.sitofp {b.name} : {b.type} to f32")
+        if b.type == "f32" and a.type in ("i32", "index"):
+            return self.emitter.ssa("f32", f"arith.sitofp {a.name} : {a.type} to f32")
+        return b
 
     def _const_like(self, like: SSA, value) -> SSA:
         if like.type == "i32":
@@ -681,7 +803,9 @@ class KernelInterpreter:
         if like.type == "index":
             return self.emitter.ssa("index", f"arith.constant {int(value)} : index")
         if like.type == "f32":
-            return self.emitter.ssa("f32", f"arith.constant {float(value)} : f32")
+            return self.emitter.ssa(
+                "f32", "arith.constant " +
+                f"{float(value):.10e}".replace("+", "") + " : f32")
         raise InterpError(f"no constant materializer for {like.type}")
 
 
@@ -723,12 +847,22 @@ def _unwrap_typed_scalar(v):
 
     Typed values that wrap SSA objects are runtime casts and remain typed;
     only literal scalar payloads participate in Python constexpr arithmetic.
+    Bridge TypedScalars (official cutlass_dsl scalars): SSA-carrying ones
+    lower to their SSA handle, literal ones to the Python payload.
     """
     try:
         from cutlass.dtypes import TypedValue
     except ImportError:
+        TypedValue = ()
+    if TypedValue and isinstance(v, TypedValue) and isinstance(v.value, (bool, int, float)):
+        return v.value
+    try:
+        from cutlass._bridge_helpers import TypedScalar
+    except ImportError:
         return v
-    if isinstance(v, TypedValue) and isinstance(v.value, (bool, int, float)):
+    if isinstance(v, TypedScalar):
+        if v.ssa is not None:
+            return v.ssa
         return v.value
     return v
 

@@ -20,10 +20,23 @@ def jit(fn):
 def __getattr__(name):
     if name == 'arch':
         from self_cutedsl.frontend import builtins
-        return builtins.arch
+        _a = builtins.arch
+        try:
+            from cutlass.cute import _fi_arch as _fa
+            _fa.install(_a)
+        except Exception:
+            pass
+        return _a
     if name in ('nvgpu', 'runtime', 'testing'):
         from importlib import import_module
         return import_module(f'cutlass.cute.{name}')
+    if name in ('Pointer', 'TensorSSA', 'ReductionOp', 'ceil_div',
+                'sym_int', 'autovec_copy', 'make_rmem_tensor'):
+        from cutlass.cute import _fi_ext2
+        return getattr(_fi_ext2, name)
+    if name == 'math':
+        from cutlass.cute._fi_ext import math
+        return math
     if name == 'struct':
         # importing the submodule binds cutlass.cute.struct as a MODULE
         # attribute that would shadow this namespace on later accesses —
@@ -137,6 +150,10 @@ def make_identity_tensor(shape):
 
 # --------------------------------------------------------------- copies/mma
 def make_copy_atom(op, element_type, **kwargs):
+    if op.__class__.__name__ == "CopyG2SOp":
+        from cutlass.cute._fi_copy import make_copy_atom as _mc
+
+        return _mc(op, element_type, **kwargs)
     from self_cutedsl.frontend import builtins
 
     return builtins.make_copy_atom(op, element_type, **kwargs)
@@ -161,6 +178,9 @@ def make_tiled_copy_S(atom, tiled_copy_c):
 def make_tiled_copy(atom, thr_layout, val_shape=None):
     """cute.make_tiled_copy(atom, TV-layout, val-shape): SF smem->rmem copy
     descriptor; lowered at the copy site from the SF trait geometry."""
+    from cutlass.cute._fi_copy import _CpAsyncAtom, TVCopyAsync
+    if isinstance(atom, _CpAsyncAtom):
+        return TVCopyAsync(atom, thr_layout, val_shape)
     return _SF_copy(atom, thr_layout, val_shape)
 
 
@@ -230,6 +250,10 @@ def copy(atom, src, dst, pred=None, **kw):
 
     from self_cutedsl.frontend.cute_objects import TiledCopyR2S
 
+    from cutlass.cute._fi_copy import _CpAsyncAtom, copy_cpasync
+    if isinstance(atom, _CpAsyncAtom):
+        copy_cpasync(atom, src, dst, pred)
+        return
     if type(atom).__name__ == "_SF_copy":
         builtins.copy_sf(atom, src, dst)
         return
@@ -319,6 +343,20 @@ def append(tup, *vals):
     if not isinstance(tup, tuple):
         tup = (tup,)
     return tup + tuple(vals)
+
+
+def prepend(layout, pre):
+    """cute.prepend(mW.layout, ((R,),:(0,))) -> broadcast a row mode in
+    front: shape/stride concatenate (pre modes first)."""
+    from self_cutedsl.frontend.cute_objects import Layout
+
+    def _sh(x):
+        return x.shape if hasattr(x, "shape") else x[0]
+
+    def _st(x):
+        return x.stride if hasattr(x, "stride") else x[1]
+
+    return Layout(_sh(pre) + _sh(layout), _st(pre) + _st(layout))
 
 
 def recast_tensor(tensor, dtype=None, **kw):
@@ -771,6 +809,10 @@ def local_tile(m, tiler, coord):
 
     base = m if hasattr(m, "layout") else m
     coord = tuple(coord)
+    if base.__class__.__name__ == "CoordinateTensorMeta":
+        from cutlass.cute._fi_copy import CoordTile
+
+        return CoordTile(base, tiler, coord)
     if isinstance(base, HT):
         lay = base.layout
     else:
@@ -781,7 +823,7 @@ def local_tile(m, tiler, coord):
         strd = tuple(getattr(base.meta, "stride", (1,) * len(shp)) or
                      (1,) * len(shp))
         lay = Layout(shp, strd)
-        base = HT(None, lay, getattr(base.meta, "element_type", None))
+        base = HT(base.ptr, lay, getattr(base.meta, "element_type", None))
     flat_s = list(co._flatten(lay.shape))
     flat_d = list(co._flatten(lay.stride))
     if len(flat_s) == 2 and len(coord) == 3:
