@@ -65,8 +65,41 @@ class TypedScalar:
             iv.const_val = lit
         return iv
 
+    def __snapshot__(self):
+        return self.ssa, self.value, self.dtype
+
+    def __restore__(self, snapshot):
+        self.ssa, self.value, self.dtype = snapshot
+
     # -- arithmetic (traced when both sides carry SSA) --------------------
     def _bin(self, other, op_int, op_flt):
+        lhs = self.value
+        rhs = (
+            other.value
+            if isinstance(other, TypedScalar) and other.value is not None
+            else other
+            if isinstance(other, (int, float)) and not isinstance(other, bool)
+            else None
+        )
+        if lhs is not None and rhs is not None:
+            op = op_flt if getattr(self.dtype, "is_float", False) else op_int
+            folded = {
+                "arith.addi": lambda a, b: a + b,
+                "arith.addf": lambda a, b: a + b,
+                "arith.subi": lambda a, b: a - b,
+                "arith.subf": lambda a, b: a - b,
+                "arith.muli": lambda a, b: a * b,
+                "arith.mulf": lambda a, b: a * b,
+                "arith.divsi": lambda a, b: int(a / b),
+                "arith.divf": lambda a, b: a / b,
+                "arith.remsi": lambda a, b: a % b,
+                "arith.andi": lambda a, b: int(a) & int(b),
+                "arith.ori": lambda a, b: int(a) | int(b),
+                "arith.xori": lambda a, b: int(a) ^ int(b),
+                "arith.shli": lambda a, b: int(a) << int(b),
+                "arith.shrsi": lambda a, b: int(a) >> int(b),
+            }[op](lhs, rhs)
+            return _make_typed(self.dtype, value=folded)
         e = _emitter()
         a = self._coerce(e)
         if hasattr(other, "name") and hasattr(other, "type"):
@@ -96,6 +129,9 @@ class TypedScalar:
         return _make_typed(self.dtype, ssa=e.ssa(a.type, f"{op} {a.name}, {b.name} : {a.type}"))
 
     def _un(self, op_int):
+        if self.value is not None:
+            value = -self.value if op_int == "arith.neg" else ~int(self.value)
+            return _make_typed(self.dtype, value=value)
         e = _emitter()
         a = self._coerce(e)
         return _make_typed(self.dtype, ssa=e.ssa(a.type, f"{op_int} {a.name} : {a.type}"))
@@ -115,6 +151,9 @@ class TypedScalar:
         return self._bin(o, "arith.subi", "arith.subf")
 
     def __rsub__(self, o):
+        if self.value is not None and \
+                isinstance(o, (int, float)) and not isinstance(o, bool):
+            return _make_typed(self.dtype, value=o - self.value)
         e = _emitter()
         a = _const_like(e, self._coerce(e), o)
         b = self._coerce(e)
@@ -159,6 +198,20 @@ class TypedScalar:
         return self._un("arith.xori")  # caller supplies -1 via ~ semantics
 
     def _cmp(self, o, int_pred, flt_pred):
+        lhs = self.value
+        rhs = o.value if isinstance(o, TypedScalar) and o.value is not None else \
+            (o if isinstance(o, (int, float)) and not isinstance(o, bool) else None)
+        if lhs is not None and rhs is not None:
+            pred = flt_pred if getattr(self.dtype, "is_float", False) else int_pred
+            result = {
+                "slt": lhs < rhs, "olt": lhs < rhs,
+                "sle": lhs <= rhs, "ole": lhs <= rhs,
+                "sgt": lhs > rhs, "ogt": lhs > rhs,
+                "sge": lhs >= rhs, "oge": lhs >= rhs,
+                "eq": lhs == rhs, "oeq": lhs == rhs,
+                "ne": lhs != rhs, "one": lhs != rhs,
+            }[pred]
+            return TypedBool(value=result)
         e = _emitter()
         a = self._coerce(e)
         if isinstance(o, TypedScalar):
@@ -173,25 +226,31 @@ class TypedScalar:
         return e.ssa("i1", f"{op} {pred}, {a.name}, {b.name} : {a.type}")
 
     def __lt__(self, o):
-        return TypedBool(self._cmp(o, "slt", "olt"))
+        result = self._cmp(o, "slt", "olt")
+        return result if isinstance(result, TypedBool) else TypedBool(result)
 
     def __le__(self, o):
-        return TypedBool(self._cmp(o, "sle", "ole"))
+        result = self._cmp(o, "sle", "ole")
+        return result if isinstance(result, TypedBool) else TypedBool(result)
 
     def __gt__(self, o):
-        return TypedBool(self._cmp(o, "sgt", "ogt"))
+        result = self._cmp(o, "sgt", "ogt")
+        return result if isinstance(result, TypedBool) else TypedBool(result)
 
     def __ge__(self, o):
-        return TypedBool(self._cmp(o, "sge", "oge"))
+        result = self._cmp(o, "sge", "oge")
+        return result if isinstance(result, TypedBool) else TypedBool(result)
 
     def __eq__(self, o):
         if isinstance(o, TypedScalar):
-            return TypedBool(self._cmp(o, "eq", "oeq"))
+            result = self._cmp(o, "eq", "oeq")
+            return result if isinstance(result, TypedBool) else TypedBool(result)
         return NotImplemented
 
     def __ne__(self, o):
         if isinstance(o, TypedScalar):
-            return TypedBool(self._cmp(o, "ne", "one"))
+            result = self._cmp(o, "ne", "one")
+            return result if isinstance(result, TypedBool) else TypedBool(result)
         return NotImplemented
 
     def __bool__(self):

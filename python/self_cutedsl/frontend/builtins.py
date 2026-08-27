@@ -530,7 +530,7 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
     plus the smem tile layout define the box; the kernel-side descriptor
     pointer comes from the TmaTensor kernel param at launch.
     """
-    from .cute_objects import TmaAtom, make_layout, _flatten
+    from .cute_objects import TmaAtom, Tensor as HostTensor, make_layout, _flatten
     from .meta import TensorMeta
     from ..runtime.tensor_map import TensorMapRecipe, CUtensorMapView
 
@@ -581,7 +581,7 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
         box = (256, 2, 2, 1, 1)
         logical_tile_sizes = (1, 2, 1)
         coord_kind = "scale_grouped"
-    elif isinstance(gmem_tensor, TensorMeta):
+    elif isinstance(gmem_tensor, (TensorMeta, HostTensor)):
         import torch as _t
         _n = getattr(gmem_tensor.element_type, "name", "")
         dt = {"f16": _t.float16, "f32": _t.float32, "bf16": _t.bfloat16,
@@ -589,7 +589,17 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
               "Float8E4M3FN": _t.uint8}.get(_n, _t.float32)
         m, n = shp[0], shp[1]
         if len(shp) > 2:
-            strides = tuple(int(value) for value in gmem_tensor.stride)
+            raw_strides = getattr(gmem_tensor, "stride", None)
+            if raw_strides is None:
+                raw_strides = gmem_tensor.layout.stride
+            strides = tuple(int(value) for value in _flatten(raw_strides))
+            if isinstance(gmem_tensor, HostTensor) and _w < 8:
+                pack = 8 // _w
+                packed_axis = min(range(len(strides)), key=strides.__getitem__)
+                strides = tuple(
+                    1 if axis == packed_axis else value // pack
+                    for axis, value in enumerate(strides)
+                )
             physical_shape = list(shp)
             if _w < 8:
                 packed_axis = min(range(len(strides)), key=strides.__getitem__)
@@ -609,8 +619,12 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
                                      box=box)
         elif _w <= 8:
             # fp4/fp8 operand storage: (m, k_bytes) row-major uint8
-            row = int(gmem_tensor.stride[0]) if getattr(
-                gmem_tensor, "stride", None) else n
+            raw_strides = getattr(gmem_tensor, "stride", None)
+            if raw_strides is None and isinstance(gmem_tensor, HostTensor):
+                raw_strides = _flatten(gmem_tensor.layout.stride)
+            row = int(raw_strides[0]) if raw_strides else n
+            if isinstance(gmem_tensor, HostTensor) and _w < 8:
+                row //= 8 // _w
             recipe = TensorMapRecipe(dtype=_t.uint8, shape=(m, row),
                                      strides_elems=(row, 1), box=box)
         else:
@@ -914,7 +928,8 @@ def copy_r2s(tc, src, dst):
     t2 = _ixop(e, "arith.muli",
                _ixop(e, "arith.remsi", lane, _ix(e, 4)), _ix(e, 2))
 
-    # slot order matches gemm_tv: (i*MMA_N + na)*4 + j
+    # FP4 fragments group two physical M atoms in the leading eight-value
+    # mode; other MMA fragments remain atom-major with four values per atom.
     ty = "f16" if getattr(frag, "dtype", None) is not None and \
         frag.dtype.name in ("f16", "Float16") else \
         ("f16" if flat_str and flat_shp[1] * 2 <= 128 else "f32")
@@ -936,7 +951,8 @@ def copy_r2s(tc, src, dst):
                              _ixop(e, "arith.muli", wn, _ix(e, warp_n)),
                              _ix(e, na * 8))
             for j in range(4):
-                c0 = (i * mn + na) * 4 + j
+                c0 = ((i // 2) * mn + na) * 8 + (i % 2) * 4 + j \
+                    if ak >= 64 else (i * mn + na) * 4 + j
                 v = frag.slots.get(c0)
                 if v is None:
                     continue
@@ -1029,9 +1045,9 @@ def copy_sf(tc, src, dst):
                      _ix(e, int(kb) * rows * 4))
 
     if is_a:
-        for i in range(2):                             # m-atoms (warp 32)
+        for i in range(4):                             # m-atoms (warp 64)
             r = _ixop(e, "arith.addi",
-                      _ixop(e, "arith.muli", wm, _ix(e, 32)),
+                      _ixop(e, "arith.muli", wm, _ix(e, 64)),
                       _ix(e, i * 16))
             r = _ixop(e, "arith.addi", r, l4)
             r = _ixop(e, "arith.addi", r, _ixop(e, "arith.muli", l2, _ix(e, 8)))
@@ -1134,37 +1150,45 @@ def gemm_bs(mma, acc, a_list, b_list):
 
 
 def gemm_bs_atom(mma, acc, a_list, b_list):
-    """One manually selected m16n8k64 block-scaled atom."""
+    """One logical block-scaled slice (one or two physical M atoms)."""
     e = _emitter()
     a_k, sfa_view = a_list
     b_k, sfb_view = b_list
     aregs = a_k.frag.slots[a_k.k]
     bregs = b_k.frag.slots[b_k.k]
     m_atom = int(getattr(a_k, "atom", getattr(sfa_view, "atom", 0)))
+    m_atom_count = int(getattr(a_k, "atom_count", 1))
     n_atom = int(getattr(b_k, "atom", getattr(sfb_view, "atom", 0)))
     kb = int(getattr(sfa_view, "k", a_k.k) or 0)
     sfa = _SF_SLOTS.get("A", {}).get(kb) or []
     sfb = _SF_SLOTS.get("B", {}).get(kb) or []
     zero32 = e.ssa("i32", "arith.constant 0 : i32")
     zero_f32 = e.ssa("f32", "arith.constant 0.0 : f32")
-    a4 = [
-        aregs[m_atom * 4 + index]
-        if m_atom * 4 + index < len(aregs) else zero32
-        for index in range(4)
-    ]
     b2 = [
         bregs[n_atom * 2 + index]
         if n_atom * 2 + index < len(bregs) else zero32
         for index in range(2)
     ]
-    sa1 = [sfa[m_atom] if m_atom < len(sfa) else zero32]
     sb1 = [sfb[n_atom] if n_atom < len(sfb) else zero32]
     holder = getattr(acc, "holder", acc)
     base = int(getattr(acc, "base", 0))
-    c4 = [holder.slots.get(base + index, zero_f32) for index in range(4)]
-    result = e.mma_mxf4nvf4(a4, b2, sa1, sb1, c4)
-    for index, value in enumerate(result):
-        holder.slots[base + index] = value
+    results = []
+    for inner_m in range(m_atom_count):
+        physical_m = m_atom + inner_m
+        a4 = [
+            aregs[physical_m * 4 + index]
+            if physical_m * 4 + index < len(aregs) else zero32
+            for index in range(4)
+        ]
+        sa1 = [sfa[physical_m] if physical_m < len(sfa) else zero32]
+        c4 = [
+            holder.slots.get(base + inner_m * 4 + index, zero_f32)
+            for index in range(4)
+        ]
+        results.append((a4, sa1, e.mma_mxf4nvf4(a4, b2, sa1, sb1, c4)))
+    for inner_m, (_, _, result) in enumerate(results):
+        for index, value in enumerate(result):
+            holder.slots[base + inner_m * 4 + index] = value
 
 
 def tma_partition(atom, cta_coord, cta_layout, smem_grouped, gmem_grouped):
@@ -1221,6 +1245,13 @@ def tma_copy_partitioned(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):
 
     def _elem(dim, tile):
         v = offs.get(dim, 0)
+        if hasattr(v, "ssa"):
+            if v.ssa is None and isinstance(getattr(v, "value", None), int):
+                v = v.value
+            else:
+                if v.ssa is None:
+                    v.ir_value()
+                v = v.ssa
         if not isinstance(v, _SSA):
             return e.ssa("i32", f"arith.constant {int(v) * int(tile)} : i32")
         v32 = v if v.type == "i32" else e.ssa(

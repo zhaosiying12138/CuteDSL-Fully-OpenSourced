@@ -154,4 +154,7 @@ def _device_ptr(val: Any) -> int:
     ptr = getattr(val, "data_ptr", None)
     if ptr is not None:
         return int(ptr())
+    ptr = getattr(val, "_pointer", None)
+    if ptr is not None:
+        return int(ptr)
     raise TypeError(f"cannot derive device pointer from {type(val)}")

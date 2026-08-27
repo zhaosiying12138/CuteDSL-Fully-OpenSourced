@@ -122,10 +122,8 @@ def b12x_ops():
     return FV.load_b12x_operator()
 
 
-@pytest.mark.sm120
-def test_b12x_static_routing_uniform_exact(b12x_ops):
-    """Two distinct experts exercise grouped TMA coordinates exactly."""
-    tokens, experts, hidden, intermediate = 64, 2, 256, 128
+def _assert_uniform_routing_exact(b12x_ops, tokens):
+    experts, hidden, intermediate = 2, 256, 128
     x = torch.full(
         (tokens, hidden), 0.1, device="cuda", dtype=torch.bfloat16
     )
@@ -165,6 +163,19 @@ def test_b12x_static_routing_uniform_exact(b12x_ops):
 
     assert torch.equal(out, expected)
     assert not torch.equal(expected_values[0], expected_values[1])
+
+
+@pytest.mark.sm120
+@pytest.mark.parametrize("tokens", [64, 256])
+def test_b12x_static_routing_uniform_exact(b12x_ops, tokens):
+    """Static routing selects experts for partial and full M tiles exactly."""
+    _assert_uniform_routing_exact(b12x_ops, tokens=tokens)
+
+
+@pytest.mark.sm120
+def test_b12x_dynamic_routing_uniform_exact(b12x_ops):
+    """The smallest dynamic-cutover case routes and computes exactly."""
+    _assert_uniform_routing_exact(b12x_ops, tokens=641)
 
 
 @pytest.mark.sm120

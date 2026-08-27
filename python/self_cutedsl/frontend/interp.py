@@ -63,6 +63,37 @@ class KernelInterpreter:
                 else:
                     self.env[p.name] = desc
                 continue
+            elif p.kind == "pointer":
+                mlir_ty = "!llvm.ptr<1>"
+                self.emitter.params.append((p.name, mlir_ty))
+                self.env[p.name] = SSA(mlir_ty, dyn_idx, "ptr")
+                dyn_idx += 1
+                continue
+            elif p.kind == "composite":
+                import copy
+                from .cute_objects import Tensor as HostTensor
+                from .kernel_objects import KernelTensor
+                from .meta import TensorMeta
+
+                composite = copy.copy(val)
+                for field_name, field_value in vars(val).items():
+                    if not isinstance(field_value, (TensorMeta, HostTensor)):
+                        continue
+                    mlir_ty = "!llvm.ptr<1>"
+                    param_name = f"{p.name}_{field_name}"
+                    self.emitter.params.append((param_name, mlir_ty))
+                    ptr = SSA(mlir_ty, dyn_idx, "ptr")
+                    dyn_idx += 1
+                    meta = getattr(field_value, "tiled", None) or field_value
+                    elem = getattr(
+                        getattr(meta, "base", meta), "element_type", None)
+                    setattr(
+                        composite,
+                        field_name,
+                        KernelTensor(ptr, meta, elem),
+                    )
+                self.env[p.name] = composite
+                continue
             elif p.kind == "tensor":
                 from .kernel_objects import KernelTensor
 
@@ -300,6 +331,16 @@ class KernelInterpreter:
         if canonical_for is not None:
             self.exec_for(canonical_for)
             return
+        assigned = self._assigned_names(node.body)
+        condition_names = {
+            item.id for item in ast.walk(node.test) if isinstance(item, ast.Name)
+        }
+        for name in sorted(assigned & condition_names):
+            value = self.env.get(name)
+            if hasattr(value, "ssa") and getattr(value, "ssa", None) is None:
+                promoted = self._as_ssa(value)
+                if promoted is not None:
+                    self.env[name] = promoted
         cond = self.eval(node.test)
         if not isinstance(cond, (bool, int)):
             self._exec_dynamic_while(node)
@@ -311,7 +352,10 @@ class KernelInterpreter:
             cond = self.eval(node.test)
             guard += 1
             if guard > 10000:
-                raise InterpError("while-loop trace guard tripped")
+                raise InterpError(
+                    "while-loop trace guard tripped at "
+                    f"line {getattr(node, 'lineno', '?')}: "
+                    f"{ast.unparse(node.test)}")
 
     def _exec_dynamic_while(self, node: ast.While) -> None:
         snapshot = dict(self.env)
@@ -435,17 +479,40 @@ class KernelInterpreter:
         return assigned
 
     def _as_ssa(self, value, template=None):
+        result = None
         if hasattr(value, "ssa"):
             if value.ssa is None:
                 value.ir_value()
             if isinstance(value.ssa, SSA):
-                return value.ssa
-        value = _unwrap_typed_scalar(value)
-        if isinstance(value, SSA):
-            return value
-        if template is None:
-            return None
-        return self._const_like(template, value)
+                result = value.ssa
+        if result is None:
+            value = _unwrap_typed_scalar(value)
+            if isinstance(value, SSA):
+                result = value
+        if result is None:
+            if template is None:
+                return None
+            result = self._const_like(template, value)
+        if template is None or result.type == template.type:
+            return result
+        source, target = result.type, template.type
+        if {source, target} <= {"index", "i32", "i64"}:
+            if source == "index" or target == "index":
+                return self.emitter.ssa(
+                    target,
+                    f"arith.index_cast {result.name} : {source} to {target}",
+                )
+            op = "arith.extsi" if source == "i32" else "arith.trunci"
+            return self.emitter.ssa(
+                target, f"{op} {result.name} : {source} to {target}")
+        if source == "f32" and target in ("f16", "bf16"):
+            return self.emitter.ssa(
+                target, f"arith.truncf {result.name} : f32 to {target}")
+        if source in ("f16", "bf16") and target == "f32":
+            return self.emitter.ssa(
+                "f32", f"arith.extf {result.name} : {source} to f32")
+        raise InterpError(
+            f"cannot merge SSA type {source} into carried type {target}")
 
     @staticmethod
     def _while_as_for(node: ast.While):
@@ -967,6 +1034,9 @@ class KernelInterpreter:
             vt, val_t = val.type, ety
             if vt == "i32" and val_t == "i8":
                 val = self.emitter.ssa("i8", f"arith.trunci {val.name} : i32 to i8")
+            elif vt == "index" and val_t in ("i32", "i64"):
+                val = self.emitter.ssa(
+                    val_t, f"arith.index_cast {val.name} : index to {val_t}")
             elif vt == "i8" and val_t == "i32":
                 val = self.emitter.ssa("i32", f"arith.extsi {val.name} : i8 to i32")
             elif vt == "i64" and val_t == "i32":
@@ -981,6 +1051,11 @@ class KernelInterpreter:
             elif vt == "bf16" and val_t == "f32":
                 val = self.emitter.ssa(
                     "f32", f"arith.extf {val.name} : bf16 to f32")
+            elif vt in ("i8", "i32", "i64") and val_t in ("f16", "bf16", "f32"):
+                as_f32 = self.emitter.ssa(
+                    "f32", f"arith.sitofp {val.name} : {vt} to f32")
+                val = as_f32 if val_t == "f32" else self.emitter.ssa(
+                    val_t, f"arith.truncf {as_f32.name} : f32 to {val_t}")
         if ety in ("f16", "bf16"):
             if p.type.startswith("!llvm.ptr<3"):
                 self.emitter.raw(
@@ -1198,6 +1273,8 @@ def _unwrap_typed_scalar(v):
     except ImportError:
         return v
     if isinstance(v, TypedScalar):
+        if isinstance(v.value, (int, float)) and not isinstance(v.value, bool):
+            return v.value
         if v.ssa is not None:
             return v.ssa
         return v.value

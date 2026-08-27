@@ -383,6 +383,16 @@ class _IterPtr:
     def base(self):
         return self.kt
 
+    def toint(self, loc=None, ip=None):
+        """Return the iterator address as the official Int64 scalar."""
+        from cutlass._bridge_helpers import _emitter
+        from cutlass import Int64
+
+        e = _emitter()
+        value = e.ssa(
+            "i64", f"llvm.ptrtoint {self.ptr.name} : {self.ptr.type} to i64")
+        return Int64(value)
+
     def _off_ssa(self, other):
         from cutlass._bridge_helpers import _emitter
         e = _emitter()

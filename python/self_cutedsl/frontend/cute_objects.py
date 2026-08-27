@@ -801,6 +801,8 @@ def _frag_atom_grid(part):
     mma = part.mma
     am, an, ak = getattr(mma.op, "shape_mnk", (16, 8, 16))
     warp_m, warp_n = mma.tile_mn
+    if ak >= 64:
+        warp_m, warp_n, _ = _blockscaled_warp_tile(mma)
     tile = part.tile
     lay = tile.layout if hasattr(tile, "layout") else tile
     flat = _flatten(lay.shape)
@@ -820,8 +822,9 @@ class FragmentViewA:
 
     def size(self, mode=None):
         mm, _, mk = _frag_atom_grid(self.view.part)
-        grid = (mm, 1, mk)
-        return grid[mode[0]] if mode is not None else mm * mk
+        ak = getattr(self.view.part.mma.op, "shape_mnk", (16, 8, 16))[2]
+        grid = (1, mm // 2, mk) if ak >= 64 else (mm, 1, mk)
+        return grid[mode[0]] if mode is not None else _prod(grid)
 
     @property
     def mma(self):
@@ -834,6 +837,9 @@ class FragmentViewA:
             k = idx[2]
         else:
             atom, k = 0, idx
+        ak = getattr(self.view.part.mma.op, "shape_mnk", (16, 8, 16))[2]
+        if ak >= 64:
+            return FragK(self, int(_const_of(k)), atom * 2, atom_count=2)
         return FragK(self, int(_const_of(k)), atom)
 
 
@@ -843,14 +849,23 @@ class FragmentViewB(FragmentViewA):
         grid = (1, mn, mk)
         return grid[mode[0]] if mode is not None else mn * mk
 
+    def __getitem__(self, idx):
+        if isinstance(idx, tuple) and len(idx) == 3:
+            atom = 0 if idx[1] is None else int(_const_of(idx[1]))
+            k = idx[2]
+        else:
+            atom, k = 0, idx
+        return FragK(self, int(_const_of(k)), atom)
+
 
 class FragK:
     """tCrX[None, None, k] — a fragment sliced at one k block."""
 
-    def __init__(self, frag, k, atom=0):
+    def __init__(self, frag, k, atom=0, atom_count=1):
         self.frag = frag
         self.k = k
         self.atom = atom
+        self.atom_count = atom_count
 
 
 def _const_of(v):
@@ -904,8 +919,7 @@ class R2SSmemView:
 
     @property
     def shape(self):
-        mm, mn = _r2s_grid(self.tc)
-        return (4, mm, mn, 1)
+        return (*_r2s_shape(self.tc), 1)
 
     def __getitem__(self, idx):
         idx = idx if isinstance(idx, tuple) else (idx,)
@@ -926,8 +940,7 @@ class AccumRetile:
 
     @property
     def shape(self):
-        mm, mn = _r2s_grid(self.tc)
-        return (4, mm, mn)
+        return _r2s_shape(self.tc)
 
     @property
     def count(self):
@@ -950,6 +963,13 @@ def _r2s_grid(tc):
     if ak >= 64:
         warp_m, warp_n, _ = _blockscaled_warp_tile(mma)
     return warp_m // am, warp_n // an
+
+
+def _r2s_shape(tc):
+    mma = getattr(tc, "mma", None)
+    ak = getattr(getattr(mma, "op", None), "shape_mnk", (16, 8, 16))[2]
+    mm, mn = _r2s_grid(tc)
+    return (8, mm // 2, mn) if ak >= 64 else (4, mm, mn)
 
 
 def _blockscaled_warp_tile(mma):
@@ -1017,8 +1037,11 @@ class SmemCopySrc:
 
 
 class PartitionedAccumulator:
-    """thr_mma.partition_C view: per-thread (4, MMA_M, MMA_N) register grid
-    (4 = f32 regs per m16n8 atom, from the mma_atoms trait geometry)."""
+    """Per-thread accumulator grid.
+
+    Ordinary atoms use ``(4, MMA_M, MMA_N)``. SM120 block-scaled fragments
+    group two M atoms as ``(8, MMA_M/2, MMA_N)``.
+    """
 
     def __init__(self, tile, mma, tidx):
         self.tile = tile
@@ -1033,6 +1056,7 @@ class PartitionedAccumulator:
         warp_n = self.mma.tile_mn[1]
         if ak >= 64:
             warp_m, warp_n, _ = _blockscaled_warp_tile(self.mma)
+            return (8, (warp_m // am) // 2, warp_n // an)
         return (4, warp_m // am, warp_n // an)
 
     @property

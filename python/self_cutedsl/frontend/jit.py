@@ -161,6 +161,21 @@ class _KernelCallStub:
                 base = getattr(v, "base", v)  # TiledTensorMeta -> its base meta
                 jit_name = names.get(id(v)) or names.get(id(base)) or p.name
                 abi.append(("tensor", jit_name))
+            elif p.kind == "pointer":
+                v = arg_values[p.name]
+                names = _host_trace.get("tensor_names", {})
+                jit_name = names.get(id(v), p.name)
+                abi.append(("pointer", jit_name))
+            elif p.kind == "composite":
+                v = arg_values[p.name]
+                names = _host_trace.get("tensor_names", {})
+                for field_name, field_value in vars(v).items():
+                    if not _is_tensor_value(field_value):
+                        continue
+                    base = getattr(field_value, "base", field_value)
+                    jit_name = names.get(id(field_value)) or \
+                        names.get(id(base)) or f"{p.name}_{field_name}"
+                    abi.append(("tensor", jit_name))
             elif p.kind == "dynamic":
                 mlir_ty = p.dtype.mlir if p.dtype else "i32"
                 abi.append(("jit", p.name, mlir_ty))
@@ -232,9 +247,24 @@ class JitFunction:
                 import sys as _s
                 print(f"  bind {p.name!r} kind={p.kind} <- {type(v).__name__}",
                       file=_s.stderr)
-            if p.kind == "constexpr":
+            forced_constexpr = getattr(self, "_forced_constexpr_names", ())
+            if p.name in forced_constexpr:
                 bound[p.name] = _as_constexpr(v)
                 key_parts.append((p.name, repr(bound[p.name])))
+            elif p.kind == "constexpr":
+                bound[p.name] = _as_constexpr(v)
+                key_parts.append((p.name, repr(bound[p.name])))
+            elif p.kind == "pointer":
+                bound[p.name] = v
+                tensors[p.name] = v
+                _host_trace.setdefault("tensor_names", {})[id(v)] = p.name
+                key_parts.append((
+                    p.name,
+                    "pointer",
+                    getattr(getattr(v, "dtype", None), "name", None),
+                    int(getattr(v, "memspace", 0)),
+                    int(getattr(v, "_assumed_align", 1)),
+                ))
             elif p.kind == "tma" or _is_tma_view(v):
                 bound[p.name] = v
                 tm = _as_tma_host(v)
@@ -319,7 +349,7 @@ class JitFunction:
         for jit, manifest, abi in cached:
             vals = []
             for entry in abi:
-                if entry[0] == "tensor":
+                if entry[0] in ("tensor", "pointer"):
                     vals.append(tensors[entry[1]])
                 elif entry[0] == "tma":
                     vals.append(_host_trace_tma[entry[1]].device_copy)
@@ -368,7 +398,8 @@ class JitFunction:
         # propagate the callee's return value to the caller's trace
         outer_active = _host_trace.get("active")
         outer_records = _host_trace.get("records")
-        _host_trace.update(active=self, records=outer_records or [])
+        records = outer_records if outer_records is not None else []
+        _host_trace.update(active=self, records=records)
         ret_box = []
         try:
             exec(compile(src, f"<jit:{self.__name__}>", "exec"), ns)
@@ -386,7 +417,7 @@ class JitFunction:
         finally:
             if nested:
                 _host_trace.update(active=outer_active,
-                                   records=outer_records or [])
+                                   records=records)
             else:
                 _host_trace.update(active=None, records=[])
 
@@ -413,7 +444,7 @@ class JitFunction:
 
 
 def _abi_mlir_type(entry) -> str:
-    if entry[0] in ("tensor", "tma"):
+    if entry[0] in ("tensor", "pointer", "tma"):
         return "ptr"
     ty = entry[2]
     return "f32" if ty.startswith("f") else ("i64" if ty == "i64" else "i32")
@@ -463,6 +494,19 @@ def compile_function(fn, *args, **options):
         # __call__ is typically @cute.jit). Semantics: compile-time args
         # are captured; later calls pass only the DYNAMIC args (tensors)
         # and the captured constexpr/stream values are reused.
+        bound_call = getattr(fn, "__call__", None)
+        params = getattr(bound_call, "_params", ())
+        forced_names = {
+            param.name
+            for param, value in zip(params, args)
+            if param.kind == "dynamic"
+            and getattr(param.dtype, "is_integer", False)
+            and isinstance(getattr(value, "value", value), int)
+            and not isinstance(getattr(value, "value", value), bool)
+        }
+        if any(param.kind == "pointer" for param in params) and forced_names:
+            return _DeferredCompiledCallable(fn, args, forced_names)
+
         global _compile_only
         previous = _compile_only
         _compile_only = True
@@ -515,7 +559,7 @@ class _CompiledCallable:
         return cls._is_stream(value) or isinstance(value, (bool, int, float, str)) or \
             (hasattr(value, "value") and not hasattr(value, "data_ptr"))
 
-    def __call__(self, *dyn_args):
+    def _merge(self, dyn_args):
         merged = list(self._prime)
         # Runtime args preserve source order and may omit captured constexpr
         # values.  Bind compatible slots directly; skip a captured slot only
@@ -545,7 +589,24 @@ class _CompiledCallable:
                 )
             merged[prime_index] = new
             prime_index += 1
-        return self._fn(*merged)
+        return merged
+
+    def __call__(self, *dyn_args):
+        return self._fn(*self._merge(dyn_args))
+
+
+class _DeferredCompiledCallable(_CompiledCallable):
+    """Pointer-based wrapper specialized after runtime layout sizes arrive."""
+
+    def __init__(self, fn, prime_args, forced_names):
+        super().__init__(fn, prime_args)
+        self._forced_names = frozenset(forced_names)
+
+    def __call__(self, *dyn_args):
+        merged = self._merge(dyn_args)
+        bound_call = getattr(self._fn, "__call__")
+        bound_call._forced_constexpr_names = self._forced_names
+        return bound_call(*merged)
 
 
 # trace state (single-threaded)
@@ -630,6 +691,11 @@ def _scan_params(fn) -> list[KernelParam]:
             kind, dtype = "constexpr", ann.dtype
         elif isinstance(ann, _DType):
             dtype = ann
+        elif getattr(ann, "__name__", "") == "Pointer" and \
+                str(getattr(ann, "__module__", "")).startswith("cutlass.cute"):
+            kind = "pointer"
+        elif isinstance(ann, type) and hasattr(ann, "__extract_mlir_values__"):
+            kind = "composite"
         elif getattr(ann, "__module__", "") in ("cutlass.cute", "cutlass.dtypes") \
                 and getattr(ann, "__name__", "") in (
                     "Tensor", "Shape", "Layout", "Coord", "TmaTensor",

@@ -20,6 +20,10 @@ def barrier(self):
     _emitter().raw("gpu.barrier")
 
 
+def sync_warp(self, mask=0xFFFFFFFF):
+    _emitter().raw(f'nvvm.inline_ptx "bar.warp.sync {int(mask)};"')
+
+
 def fmax(a, b):
     e = _emitter()
     va = a.ssa if isinstance(a, TypedScalar) else a
@@ -65,10 +69,17 @@ def shuffle_sync(self, val, lane, mask=0xFFFFFFFF, **kw):
     source = lane.ssa if isinstance(lane, TypedScalar) else lane
     if not hasattr(source, "name"):
         source = e.ssa("i32", f"arith.constant {int(source)} : i32")
+    elif source.type == "index":
+        source = e.ssa(
+            "i32", f"arith.index_cast {source.name} : index to i32")
     was_float = value.type == "f32"
     bits = e.ssa(
         "i32", f"llvm.bitcast {value.name} : f32 to i32") \
         if was_float else value
+    if bits.type == "index":
+        bits = e.ssa("i32", f"arith.index_cast {bits.name} : index to i32")
+    elif bits.type == "i64":
+        bits = e.ssa("i32", f"arith.trunci {bits.name} : i64 to i32")
     result = e.ssa(
         "i32",
         'nvvm.inline_ptx "shfl.sync.idx.b32 $0, $1, $2, 31, -1;" '
@@ -113,6 +124,7 @@ def install(arch_instance):
         ("shuffle_sync_bfly", shuffle_sync_bfly),
         ("shuffle_sync", shuffle_sync),
         ("barrier", barrier),
+        ("sync_warp", sync_warp),
         ("fmax", fmax),
         ("rcp_approx", rcp_approx),
         ("cp_async_commit_group", cp_async_commit_group),

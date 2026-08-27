@@ -56,8 +56,14 @@ class NamedBarrier:
         _b._emitter().named_barrier_arrive("nb", self.barrier_id,
                                            self.thread_count)
 
+    def arrive_unaligned(self):
+        self.arrive()
+
     def wait(self):
         _b._emitter().named_barrier_sync(self.barrier_id, self.thread_count)
+
+    def wait_unaligned(self):
+        self.wait()
 
     def sync(self):
         self.wait()

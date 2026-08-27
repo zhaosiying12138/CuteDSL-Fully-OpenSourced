@@ -4,7 +4,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python"))
+sys.path.insert(0, str(ROOT / "python/cutlass_compat"))
 
+import cutlass
 from self_cutedsl.frontend.jit import _CompiledCallable
 
 
@@ -65,3 +67,18 @@ def test_omitted_constexpr_is_skipped_before_runtime_stream():
     assert rebound[:2] == new_tensors
     assert rebound[2] == 64
     assert rebound[3] is new_stream
+
+
+def test_typed_literals_fold_and_restore_region_state():
+    left = cutlass.Int32(7)
+    right = cutlass.Int32(3)
+
+    assert (left + right).value == 10
+    assert (left // right).value == 2
+    assert bool(left > right)
+
+    snapshot = left.__snapshot__()
+    left.ssa = object()
+    left.__restore__(snapshot)
+    assert left.ssa is None
+    assert left.value == 7
