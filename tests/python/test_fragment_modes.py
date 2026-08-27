@@ -34,7 +34,9 @@ def test_rmem_tensor_preserves_shape_for_mode_queries():
 
 
 def test_accum_retile_mode_slice_keeps_value_mode():
-    fragment = builtins.make_rmem_tensor((4, 2, 8), F32)
+    """SM120 block-scaled retile speaks the official paired-8 fragment
+    convention: two physical M atoms share one eight-value leading mode."""
+    fragment = builtins.make_rmem_tensor((8, 1, 8), F32)
     fragment.slots.update({slot: f"slot-{slot}" for slot in range(64)})
     mma = SimpleNamespace(
         op=SimpleNamespace(shape_mnk=(16, 8, 64)),
@@ -42,19 +44,20 @@ def test_accum_retile_mode_slice_keeps_value_mode():
     )
     retile = AccumRetile(SimpleNamespace(mma=mma), fragment)
 
-    assert retile.shape == (4, 2, 8)
-    assert cute_size(retile, mode=[1]) == 2
+    # default CTA tile (128,128) -> warp tile (32,64) -> paired (8, 1, 8)
+    assert retile.shape == (8, 1, 8)
+    assert cute_size(retile, mode=[1]) == 1
     assert cute_size(retile, mode=[2]) == 8
 
-    atom = retile[(None, 1, 3)]
-    assert atom.shape == (4,)
-    assert cute_size(atom) == 4
-    assert [atom[i] for i in range(4)] == [
-        "slot-44", "slot-45", "slot-46", "slot-47"
+    atom = retile[(None, 0, 3)]
+    assert atom.shape == (8,)
+    assert cute_size(atom) == 8
+    assert [atom[i] for i in range(8)] == [
+        f"slot-{24 + i}" for i in range(8)
     ]
 
     atom[2] = "updated"
-    assert fragment.slots[46] == "updated"
+    assert fragment.slots[24 + 2] == "updated"
 
 
 def test_typed_literal_arithmetic_stays_constexpr():

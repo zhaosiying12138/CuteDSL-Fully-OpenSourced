@@ -576,8 +576,6 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
         # logical FP4/SF shapes are represented correctly.
         group_str = (strd[5] if strd and strd[5] else None) or rm * rm_str
         if l == 1:
-            # single batch: the group axis is physically size-1 — fold it
-            # out (unit stride violates TMA alignment); rank-4 legacy form
             recipe = TensorMapRecipe(dtype=_t.uint8,
                                      shape=(rm, rk, 2, 256),
                                      strides_elems=(rm_str, 512, 256, 1),
@@ -620,8 +618,10 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
             # physical size-1 axes contribute no address space and their
             # (arbitrary) unit stride violates the 16-byte global-stride
             # alignment; fold them out of the descriptor and the coords
+            import os as _o4
             kept_axes = tuple(a for a in axes_slow_to_fast
-                              if physical_shape[a] != 1)
+                              if physical_shape[a] != 1
+                              and not _o4.environ.get('DG_NO_FOLD'))
             dropped = tuple(a for a in axes_slow_to_fast
                             if physical_shape[a] == 1)
             axes_slow_to_fast = kept_axes if kept_axes else axes_slow_to_fast[:1]
@@ -728,21 +728,28 @@ def _ixop(e, op, a, b):
 
 
 def _warp_mn_coord(e, mma, wid, warps_m, warps_n):
-    # Unified rule (column-major CuTe semantics): mode-0 (M) is the fast
-    # warp coordinate for every tiled-MMA layout — blockscaled (4,2),
-    # b12x (2,2), and the f16 dense path all enumerate M warps first.
-    wm = _ixop(e, "arith.remsi", wid, _ix(e, warps_m))
-    wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
+    # SM120 block-scaled fragments enumerate N warps first; the f16 tiled
+    # MMA used by dense_gemm enumerates M warps first.
+    ak = getattr(getattr(mma, "op", None), "shape_mnk", (16, 8, 16))[2]
+    if ak >= 64:
+        wm = _ixop(e, "arith.divsi", wid, _ix(e, warps_n))
+        wn = _ixop(e, "arith.remsi", wid, _ix(e, warps_n))
+    else:
+        wm = _ixop(e, "arith.remsi", wid, _ix(e, warps_m))
+        wn = _ixop(e, "arith.divsi", wid, _ix(e, warps_m))
     return wm, wn
 
 
 def _lane0_predicate():
-    """i1 SSA: lane-0 predicate, safe under divergence (elect.sync traps
-    when reached by a partial warp)."""
+    """i1 SSA: one convergently elected issuer per warp — elect.sync
+    picks the lowest ACTIVE lane, which is the correct leader under
+    divergence (a fixed lane==0 test can elect nobody when lane 0 is
+    not in the executing subset, deadlocking the mbarrier)."""
     e = _emitter()
-    tid = e.thread_id("x")
-    lane = e.idx_binop("arith.remsi", tid, e.ssa("index", "arith.constant 32 : index"))
-    return e.cmpi_slt_const(lane, 1)
+    return e.ssa(
+        "i1",
+        'nvvm.inline_ptx "elect.sync _|$0, 0xffffffff;" -> i1',
+    )
 
 
 def _is_swizzle_128b(swizzle):
@@ -968,6 +975,7 @@ def copy_r2s(tc, src, dst):
     warp_m, warp_n = mma.tile_mn
     if ak >= 64:
         warp_m, warp_n, warps_m = _blockscaled_warp_tile(mma)
+
     mm, mn = warp_m // am, warp_n // an
     row_str = _ix(e, flat_str[0])      # (m,n):(n,1) -> row stride = n
 
@@ -1003,9 +1011,15 @@ def copy_r2s(tc, src, dst):
                              _ixop(e, "arith.muli", wn, _ix(e, warp_n)),
                              _ix(e, na * 8))
             for j in range(4):
-                c0 = ((i // 2) * mn + na) * 8 + (i % 2) * 4 + j \
-                    if getattr(frag, "slot_order", "atom4") == "paired8" \
-                    else (i * mn + na) * 4 + j
+                # SM120 fragment leading-mode convention: the official
+                # paired-8 grouping (two M atoms per eight-value group)
+                # applies when the CTA M extent equals one warp column
+                # (warps_m <= 2); taller CTA grids (warps_m >= 4) keep the
+                # atom-major four-value groups. Derived from the mma's
+                # atom_layout — no per-operator special casing.
+                paired = ak >= 64 and warps_m <= 2
+                c0 = (((i // 2) * mn + na) * 8 + (i % 2) * 4 + j
+                       if paired else (i * mn + na) * 4 + j)
                 v = frag.slots.get(c0)
                 if v is None:
                     continue
@@ -1059,8 +1073,9 @@ def copy_sf(tc, src, dst):
     for dimension in _flatten(top_shape[0]):
         rows *= int(dimension)
     # k-groups per stage come from the LAYOUT's second mode (the staged
-    # window is one stage of the array); deriving from total bytes would
-    # collapse the stage dimension and break the stage window
+    # window is one stage of the array); deriving from total bytes
+    # collapses the stage dimension and turns kb addressing linear,
+    # running past the array once kb exceeds one stage
     _flat2 = _flatten(top_shape[1]) if len(top_shape) > 1 else (1,)
     kgs = 1
     for _d in _flat2:
@@ -1071,27 +1086,20 @@ def copy_sf(tc, src, dst):
     # live micro CTA tile is 64 rows; consecutive K64 blocks remain 512 B apart.
     sf_storage_rows = max(128, rows)
     kb = int(getattr(view, "k", 0) or 0)
+    import os as _o6
+    if _o6.environ.get("DG_SF_DBG2"):
+        import sys as _s6
+        _s6.stderr.write(f"[sf2] rows={rows} kgs={kgs} stages={stages} kb={kb} "
+                         f"count={arr.count} lay={lay.shape}\n")
 
     tidx = _ix(e, tc.tidx)
     lane = _ixop(e, "arith.remsi", tidx, _ix(e, 32))
     wid = _ixop(e, "arith.divsi", tidx, _ix(e, 32))
-    # warp roles follow the mma atom layout: CuTe layouts are
-    # column-major by mode order, so mode-0 (M) is the fast warp
-    # coordinate — wm = wid % M_warps (blockscaled (4,2) and b12x (2,2)
-    # share the rule)
+    # The SM120 tiled MMA uses atom_layout=(2,2,1), whose compact
+    # row-major layout makes N the fast warp coordinate.
+    wm = _ixop(e, "arith.divsi", wid, _ix(e, 2))
+    wn = _ixop(e, "arith.remsi", wid, _ix(e, 2))
     mma = getattr(tc, "_tiled_mma", None)
-    m_warps = 2
-    if mma is not None:
-        _al = getattr(mma, "atom_layout", None)
-        _al_shape = getattr(_al, "shape", _al) if _al is not None else None
-        try:
-            _fl = _flatten(_al_shape) if _al_shape else ()
-            m_warps = int(_fl[0]) if _fl else 2
-        except Exception:
-            m_warps = 2
-    m_warps = max(1, m_warps)
-    wm = _ixop(e, "arith.remsi", wid, _ix(e, m_warps))
-    wn = _ixop(e, "arith.divsi", wid, _ix(e, m_warps))
     warp_m = _blockscaled_warp_tile(mma)[0] if mma is not None else 64
 
     which = getattr(tc, "which", None)
@@ -1100,8 +1108,16 @@ def copy_sf(tc, src, dst):
     is_a = which == "A"
     l4 = _ixop(e, "arith.divsi", lane, _ix(e, 4))      # lane//4
     l2 = _ixop(e, "arith.remsi", lane, _ix(e, 2))      # lane%2 (row select)
-    # stage window: rows*kgs bytes per stage (SF arrays are byte-typed)
-    win = smem_stage(arr, getattr(view, "stage", 0), rows * kgs)
+    # stage window: rows*kgs bytes per stage (SF arrays are byte-typed).
+    # kb indexes K64 blocks; each K64 owns kgs//4 K16 SF groups, so the
+    # byte offset inside a stage is (kb % (kgs//4)) * rows * 4 and the
+    # stage advances every kgs//4 blocks (view.stage carries the wrapped
+    # pipeline stage when present)
+    _k64_per_stage = max(1, kgs // 4)
+    _stage = getattr(view, "stage", None)
+    if _stage is None:
+        _stage = (int(kb) // _k64_per_stage) % stages
+    win = smem_stage(arr, _stage, rows * kgs)
     soff = win.stage_offset
     regs = []
     # Blocked SMEM order from the SF TMA box.  Each MMA K64 block owns
@@ -1118,7 +1134,7 @@ def copy_sf(tc, src, dst):
                      _ixop(e, "arith.addi",
                            _ixop(e, "arith.muli", i32p, _ix(e, 16)),
                            _ixop(e, "arith.muli", i4p, _ix(e, 4))),
-                     _ix(e, int(kb) * sf_storage_rows * 4))
+                     _ix(e, (int(kb) % _k64_per_stage) * sf_storage_rows * 4))
 
     if is_a:
         for i in range(warp_m // 16):
@@ -1266,7 +1282,7 @@ def gemm_bs_atom(mma, acc, a_list, b_list):
     for inner_m, (_, _, result) in enumerate(results):
         for index, value in enumerate(result):
             holder.slots[base + inner_m * 4 + index] = value
-    holder.slot_order = "paired8"
+    holder.slot_order = "atom4"
 
 
 def tma_partition(atom, cta_coord, cta_layout, smem_grouped, gmem_grouped):
@@ -1340,12 +1356,10 @@ def tma_copy_partitioned(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):
     if getattr(atom, "coord_kind", None) == "scale_grouped":
         # SF recipe: (rm, rk, 2, 256) rank-4 when the batch axis folded,
         # (l, rm, rk, 2, 256) rank-5 when grouped; coords follow the rank
-        rank = len(getattr(atom, "recipe", None).shape
-                   ) if getattr(atom, "recipe", None) else 4
         coords = [_elem("d1", 2), _elem("d0", 1)]
         coords = [e.ssa("i32", "arith.constant 0 : i32"),
                   e.ssa("i32", "arith.constant 0 : i32")] + coords
-        if rank == 5:
+        if len(getattr(atom, "box", ())) >= 5:
             coords = coords + [_elem("d2", 1)]
     else:
         tile_sizes = tuple(getattr(atom, "logical_tile_sizes", (box[1], box[0])))

@@ -855,7 +855,20 @@ class KernelInterpreter:
         from .kernel_objects import _FragSlice
         if isinstance(base, (Fragment, _FragSlice)):
             v = self.eval(slice_node)
-            return base[v]
+            try:
+                return base[v]
+            except IndexError:
+                import sys as _s
+                holder = getattr(base, "holder", base)
+                _s.stderr.write(
+                    "[ixdbg] base=%s shape=%s count=%s idx=%r holder_dims=%s holder_count=%s slot_order=%s\n" % (
+                        type(base).__name__,
+                        getattr(base, "shape", None),
+                        getattr(base, "count", "?"), v,
+                        getattr(holder, "dims", None),
+                        getattr(holder, "count", "?"),
+                        getattr(holder, "slot_order", None)))
+                raise
         if isinstance(base, SSA):
             return self._load_elem(base, self.eval(slice_node))
         if isinstance(base, (list, tuple)):

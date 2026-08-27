@@ -29,14 +29,14 @@ def get_layoutSFA_TV(tiled_mma):
     """Thread-value layout for SFA fragments (host descriptor); the operand
     tag travels on the layout so the copy-site lowering knows A vs B."""
     lay = make_layout((4, 2, 1))
-    lay._sf_operand = "A"
+    lay._sf_operand = "A" if not __import__("os").environ.get("DG_NO_TVTAG") else None
     lay._tiled_mma = tiled_mma
     return lay
 
 
 def get_layoutSFB_TV(tiled_mma):
     lay = make_layout((4, 2, 1))
-    lay._sf_operand = "B"
+    lay._sf_operand = "B" if not __import__("os").environ.get("DG_NO_TVTAG") else None
     lay._tiled_mma = tiled_mma
     return lay
 
