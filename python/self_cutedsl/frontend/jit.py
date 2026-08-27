@@ -289,7 +289,21 @@ class JitFunction:
                 bound[p.name] = v
                 tensors[p.name] = v
                 _host_trace.setdefault("tensor_names", {})[id(v)] = p.name
-                key_parts.append((p.name, v.shape, v.stride, v.element_type.name))
+                if getattr(v, "_mark_dynamic", False):
+                    # P5 policy: marked extents leave the specialization
+                    # key and ride the runtime-scalar channel instead —
+                    # one compiled plan is shared across their values.
+                    key_parts.append((
+                        p.name, "tensor-dynamic", len(v.shape),
+                        v.element_type.name,
+                        tuple("dyn" for _ in v.shape),
+                        tuple(v.stride),
+                    ))
+                    for di, dval in enumerate(v.shape):
+                        _host_trace_runtime[f"{p.name}_d{di}"] = int(dval)
+                else:
+                    key_parts.append(
+                        (p.name, v.shape, v.stride, v.element_type.name))
             elif p.name == "stream" or hasattr(v, "cuda_stream") or \
                     type(v).__name__ in ("_FakeStream", "CUstream"):
                 bound[p.name] = v  # stream handle: launch-time, not an ABI arg

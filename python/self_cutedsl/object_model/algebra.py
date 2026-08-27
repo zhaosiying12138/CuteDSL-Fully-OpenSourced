@@ -158,6 +158,32 @@ def size(e, x, mode=None):
 
 
 # ------------------------------------------------------------- algebra
+import os as _os_algebra
+
+from . import cutegen_binding as _oracle
+
+
+def _oracle_type(op_name, *type_texts):
+    """Result type from the in-process cutegen oracle (the same library the
+    cute dialect and the closed official DSL use as their type engine;
+    results cached inside the binding). Returns None when the binding is
+    unavailable — callers then fall back to the verifier-subprocess
+    bootstrap path."""
+    if _os_algebra.environ.get("SC_ORACLE_OFF"):
+        return None
+    if not _oracle.available():
+        return None
+    try:
+        return getattr(_oracle, op_name)(*type_texts)
+    except Exception:
+        return None
+
+
+def _emit_typed(e, line: str, result_type_text: str):
+    res = e.ssa(result_type_text, line)
+    return CuteOpValue(res, _meta_from_text(result_type_text))
+
+
 def _binary(e, op, a: CuteOpValue, b: CuteOpValue, out_meta):
     res = e.ssa(out_meta.text,
                 f"cute.{op}({a.name}, {b.name}) "
@@ -166,40 +192,77 @@ def _binary(e, op, a: CuteOpValue, b: CuteOpValue, out_meta):
 
 
 def composition(e, a: CuteOpValue, b: CuteOpValue, out_meta=None):
-    if out_meta is None:
-        return emit_with_inference(
-            e, lambda rt: f"cute.composition({a.name}, {b.name}) "
-                          f": ({a.ctype.text}, {b.ctype.text}) -> {rt}")
-    return _binary(e, "composition", a, b, out_meta)
+    rt = out_meta.text if out_meta is not None else \
+        _oracle_type("composition", a.ctype.text, b.ctype.text)
+    if rt is not None:
+        return _emit_typed(
+            e, f"cute.composition({a.name}, {b.name}) "
+               f": ({a.ctype.text}, {b.ctype.text}) -> {rt}", rt)
+    return emit_with_inference(
+        e, lambda r: f"cute.composition({a.name}, {b.name}) "
+                     f": ({a.ctype.text}, {b.ctype.text}) -> {r}")
 
 
-def coalesce(e, lay: CuteOpValue):
+def coalesce(e, lay: CuteOpValue, out_meta=None):
+    rt = out_meta.text if out_meta is not None else \
+        _oracle_type("coalesce", lay.ctype.text)
+    if rt is not None:
+        return _emit_typed(
+            e, f"cute.coalesce({lay.name}) : ({lay.ctype.text}) -> {rt}", rt)
     return _unary(e, "coalesce", lay, lay.ctype)
 
 
-def flatten(e, lay: CuteOpValue, out_meta):
-    return _unary(e, "flatten", lay, out_meta)
+def flatten(e, lay: CuteOpValue, out_meta=None):
+    rt = out_meta.text if out_meta is not None else \
+        _oracle_type("flatten", lay.ctype.text)
+    if rt is not None:
+        return _emit_typed(
+            e, f"cute.flatten({lay.name}) : ({lay.ctype.text}) -> {rt}", rt)
+    if out_meta is not None:
+        return _unary(e, "flatten", lay, out_meta)
+    raise RuntimeError("flatten: no oracle and no out_meta")
 
 
 def zipped_divide(e, lay: CuteOpValue, tiler, out_meta=None):
-    """tiler: CuteOpValue of Shape/Layout/Tile. Result type computed by
-    the C++ verifier when out_meta is None."""
+    """tiler: CuteOpValue of Shape/Layout/Tile. Result type from the
+    in-process cutegen oracle; verifier path as bootstrap fallback."""
+    rt = out_meta.text if out_meta is not None else \
+        _oracle_type("zipped_divide", lay.ctype.text, tiler.ctype.text)
+    if rt is not None:
+        return _emit_typed(
+            e, f"cute.zipped_divide({lay.name}, {tiler.name}) "
+               f": ({lay.ctype.text}, {tiler.ctype.text}) -> {rt}", rt)
     if out_meta is not None:
         return _binary(e, "zipped_divide", lay, tiler, out_meta)
     return emit_with_inference(
-        e, lambda rt: f"cute.zipped_divide({lay.name}, {tiler.name}) "
-                      f": ({lay.ctype.text}, {tiler.ctype.text}) -> {rt}")
+        e, lambda r: f"cute.zipped_divide({lay.name}, {tiler.name}) "
+                     f": ({lay.ctype.text}, {tiler.ctype.text}) -> {r}")
 
 
-def logical_divide(e, lay: CuteOpValue, tiler, out_meta):
-    return _binary(e, "logical_divide", lay, tiler, out_meta)
+def logical_divide(e, lay: CuteOpValue, tiler, out_meta=None):
+    rt = out_meta.text if out_meta is not None else \
+        _oracle_type("logical_divide", lay.ctype.text, tiler.ctype.text)
+    if rt is not None:
+        return _emit_typed(
+            e, f"cute.logical_divide({lay.name}, {tiler.name}) "
+               f": ({lay.ctype.text}, {tiler.ctype.text}) -> {rt}", rt)
+    if out_meta is not None:
+        return _binary(e, "logical_divide", lay, tiler, out_meta)
+    return emit_with_inference(
+        e, lambda r: f"cute.logical_divide({lay.name}, {tiler.name}) "
+                     f": ({lay.ctype.text}, {tiler.ctype.text}) -> {r}")
 
 
-def slice_(e, lay: CuteOpValue, crd: CuteOpValue, out_meta):
-    res = e.ssa(out_meta.text,
-                f"cute.slice({lay.name}, {crd.name}) "
-                f": ({lay.ctype.text}, {crd.ctype.text}) -> {out_meta.text}")
-    return CuteOpValue(res, out_meta)
+def slice_(e, lay: CuteOpValue, crd: CuteOpValue, out_meta=None):
+    rt = out_meta.text if out_meta is not None else \
+        _oracle_type("slice_", crd.ctype.text, lay.ctype.text)
+    if rt is not None:
+        return _emit_typed(
+            e, f"cute.slice({lay.name}, {crd.name}) "
+               f": ({lay.ctype.text}, {crd.ctype.text}) -> {rt}", rt)
+    if out_meta is not None:
+        return _binary(e, "slice", lay, crd, out_meta)
+    raise RuntimeError("slice: no oracle and no out_meta")
 
 
 def group_modes(e, x: CuteOpValue, i: int, j: int, out_meta=None):

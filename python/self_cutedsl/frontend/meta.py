@@ -96,7 +96,25 @@ class TensorMeta:
         return idx
 
     def mark_layout_dynamic(self, leading_dim=None, **kw) -> "TensorMeta":
-        return self  # dynamism hints; same meta (leading_dim advisory)
+        """Opt in to shape-polymorphic specialization for this tensor.
+
+        Marked extents leave the jit specialization key (one compiled plan
+        is shared across all values of those extents) and are published as
+        runtime scalars named '<param>_d<i>' in the dynamic-scalar channel
+        at every call. The kernel contract: marked extents must be consumed
+        through runtime scalars (bounds, grids, predicates) — never baked
+        into addressing arithmetic. This mirrors Triton's constexpr-vs-
+        runtime split as an explicit policy, not a global switch.
+        """
+        self._mark_dynamic = True
+        self._leading_dim = leading_dim
+        return self
+
+    def mark_compact_shape_dynamic(self, *a, **kw) -> "TensorMeta":
+        return self.mark_layout_dynamic(*a, **kw)
+
+    def mark_dynamic(self, *a, **kw) -> "TensorMeta":
+        return self.mark_layout_dynamic(*a, **kw)
 
     @property
     def iterator(self):
