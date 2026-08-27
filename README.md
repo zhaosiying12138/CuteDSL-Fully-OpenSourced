@@ -4,7 +4,7 @@
 
 从 Python `@cute.jit` 前端到 `sm_120a` PTX 的**完全开源** CuTeDSL 兼容编译器栈：官方 CUTLASS 示例内核与 flashinfer 算子**零修改**编译并在 RTX 5090 Laptop 上运行，全路径只由 BSD/Apache 许可的源码与我们自己的代码构成——没有 `_cutlass_ir`、没有 nvcc/NVRTC/ptxas、没有官方闭源 wheel。
 
-在 5090 Laptop 实测中，六个具备官方 CuTeDSL 对照的算子族（逐族按 shape 取均值后再跨族算术平均）达到官方闭源实现的 **83%**（本轮捕获 82.8%；共享 GPU 下两轮正式捕获区间 73.5%–82.8%，条件随数据记录；详见[性能总表](#5-性能)与 `artifacts/perf/summary.md`）。
+在 5090 Laptop 实测中，六个具备官方 CuTeDSL 对照的算子族（逐族按 shape 取均值后再跨族算术平均）达到官方闭源实现的 **79%**（记录口径捕获 78.9%；共享 GPU 下三轮正式捕获区间 73.5%–82.8%，条件随数据记录；详见[性能总表](#5-性能)与 `artifacts/perf/summary.md`）。
 
 > **开源边界**：从 Python API 到 textual PTX 全部开源（BSD-3）。PTX 在运行时交给 CUDA 驱动的 JIT——驱动、SASS 生成与 GPU 固件仍是 NVIDIA 专有的（与任何 CUDA 程序相同）。
 
@@ -75,13 +75,13 @@ PTX 审计（可选）：`DG_DUMP_PTX=1` 跑任意负载后执行 `tools/inspect
 
 | 算子族 | 官方对照 | 达到官方 |
 |---|---|---|
-| elementwise add（FP32，Ampere demo，3 shapes） | ✓ | 113% |
-| dense GEMM（FP16，tile 64×64×64，3 shapes） | ✓ | 101% |
-| blockscaled GEMM（NVFP4 coop，tile 128×128×128，3 shapes） | ✓ | 62% |
-| flashinfer rmsnorm_fp4quant（3 shapes） | ✓ | 69% |
-| flashinfer add_rmsnorm_fp4quant（3 shapes） | ✓ | 80% |
-| flashinfer b12x fused MoE（W4A16 NVFP4，3 configs） | ✓ | 71% |
-| **六族算术平均** | | **83%** |
+| elementwise add（FP32，Ampere demo，3 shapes） | ✓ | 111% |
+| dense GEMM（FP16，tile 64×64×64，3 shapes） | ✓ | 93% |
+| blockscaled GEMM（NVFP4 coop，tile 128×128×128，3 shapes） | ✓ | 57% |
+| flashinfer rmsnorm_fp4quant（3 shapes） | ✓ | 73% |
+| flashinfer add_rmsnorm_fp4quant（3 shapes） | ✓ | 66% |
+| flashinfer b12x fused MoE（W4A16 NVFP4，3 configs） | ✓ | 73% |
+| **六族算术平均** | | **79%** |
 
 - 完整逐 shape 数据（µs / GB/s / TFLOP·s⁻¹ / 每次捕获的 GPU 状态）：`artifacts/perf/summary.md` 与 `artifacts/perf/*.json`；
 - 社区参考列（torch eager / torch.compile / cuBLAS）：`tools/perf/bench_torch_baselines.py` → `artifacts/perf/community_baselines.json`；

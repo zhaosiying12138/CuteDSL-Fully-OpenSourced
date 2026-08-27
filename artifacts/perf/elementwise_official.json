@@ -1,16 +1,16 @@
 {
  "family": "elementwise",
  "stack": "official",
- "generated_at": "2026-08-27T23:11:38",
+ "generated_at": "2026-08-28T00:27:32",
  "torch_version": "2.13.0+cu130",
  "gpu_meta": {
   "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
   "driver_version": "610.74",
   "utilization.gpu": "100",
-  "memory.used": "12247",
-  "clocks.sm": "2197",
+  "memory.used": "12861",
+  "clocks.sm": "1590",
   "clocks.mem": "14001",
-  "power.draw": "30.49",
+  "power.draw": "106.31",
   "temperature.gpu": "55",
   "source": "/usr/lib/wsl/lib/nvidia-smi"
  },
@@ -39,24 +39,24 @@
     1024,
     1024
    ],
-   "median_us": 15.4,
-   "gb_s": 816.1
+   "median_us": 20.6,
+   "gb_s": 610.0
   },
   {
    "shape": [
     2048,
     2048
    ],
-   "median_us": 70.8,
-   "gb_s": 710.6
+   "median_us": 81.5,
+   "gb_s": 617.2
   },
   {
    "shape": [
     8192,
     8192
    ],
-   "median_us": 1250.5,
-   "gb_s": 644.0
+   "median_us": 1278.2,
+   "gb_s": 630.0
   }
  ],
  "kernel": "ampere/kernel/elementwise/elementwise_add.py UNMODIFIED"

@@ -1,77 +1,77 @@
 # Performance summary — self stack vs official CuTeDSL (RTX 5090 Laptop, sm_120a)
 
-Generated: 2026-08-27T23:42:43
+Generated: 2026-08-28T00:29:37
 
 ## elementwise_add (FP32, Ampere demo)
 
 | shape | official µs | self µs | official | self | self/official |
 |---|---|---|---|---|---|
-| 1024x1024 | 15.4 | 16.2 | 816.1 GB/s | 777.3 GB/s | **95.1%** |
-| 2048x2048 | 70.8 | 78.1 | 710.6 GB/s | 644.6 GB/s | **90.7%** |
-| 8192x8192 | 1250.5 | 1244.2 | 644.0 GB/s | 647.3 GB/s | **100.5%** |
+| 1024x1024 | 20.6 | 19.4 | 610.0 GB/s | 649.0 GB/s | **106.2%** |
+| 2048x2048 | 81.5 | 64.4 | 617.2 GB/s | 781.0 GB/s | **126.6%** |
+| 8192x8192 | 1278.2 | 1263.4 | 630.0 GB/s | 637.4 GB/s | **101.2%** |
 
-Family mean: **95.4%** of official.
+Family mean: **111.3%** of official.
 
 ## dense_gemm (FP16, tile 64x64x64)
 
 | shape | official µs | self µs | official | self | self/official |
 |---|---|---|---|---|---|
-| 2048x2048x2048x1 | 179.3 | 245.9 | 95.8 TF/s | 69.9 TF/s | **72.9%** |
-| 4096x4096x4096x1 | 1561.2 | 1741.2 | 88.0 TF/s | 78.9 TF/s | **89.7%** |
-| 4104x2056x512x1 | 119.1 | 129.1 | 72.5 TF/s | 66.9 TF/s | **92.3%** |
+| 2048x2048x2048x1 | 180.2 | 191.3 | 95.3 TF/s | 89.8 TF/s | **94.2%** |
+| 4096x4096x4096x1 | 1590.3 | 1568.6 | 86.4 TF/s | 87.6 TF/s | **101.4%** |
+| 4104x2056x512x1 | 104.7 | 125.5 | 82.5 TF/s | 68.9 TF/s | **83.4%** |
 
-Family mean: **85.0%** of official.
+Family mean: **93.0%** of official.
 
 ## blockscaled GEMM (NVFP4 coop, tile 128x128x128)
 
 | shape | official µs | self µs | official | self | self/official |
 |---|---|---|---|---|---|
-| 1024x1024x1024x1 | 10.0 | 31.7 | 214.1 TF/s | 67.8 TF/s | **31.5%** |
-| 1024x4096x4096x1 | 78.3 | 131.1 | 438.9 TF/s | 262.1 TF/s | **59.7%** |
-| 4096x4096x4096x1 | 239.0 | 405.0 | 575.2 TF/s | 339.4 TF/s | **59.0%** |
+| 1024x1024x1024x1 | 12.0 | 40.3 | 179.5 TF/s | 53.3 TF/s | **29.8%** |
+| 1024x4096x4096x1 | 93.4 | 124.3 | 367.7 TF/s | 276.5 TF/s | **75.1%** |
+| 4096x4096x4096x1 | 262.2 | 395.8 | 524.2 TF/s | 347.2 TF/s | **66.2%** |
 
-Family mean: **50.1%** of official.
+Family mean: **57.0%** of official.
 
 ## flashinfer rmsnorm_fp4quant (FP16->NVFP4)
 
 | shape | official µs | self µs | official | self | self/official |
 |---|---|---|---|---|---|
-| 1024x2048 | 15.71 | 64.0 | 342.1 GB/s | 84.0 GB/s | **24.5%** |
-| 16384x2048 | 88.8 | 90.85 | 968.3 GB/s | 946.4 GB/s | **97.7%** |
-| 4096x5120 | 74.69 | 57.79 | 719.5 GB/s | 929.9 GB/s | **129.2%** |
+| 1024x2048 | 19.52 | 53.95 | 275.3 GB/s | 99.6 GB/s | **36.2%** |
+| 16384x2048 | 88.67 | 89.6 | 969.7 GB/s | 959.6 GB/s | **99.0%** |
+| 4096x5120 | 30.18 | 36.42 | 1780.6 GB/s | 1475.5 GB/s | **82.9%** |
 
-Family mean: **83.8%** of official.
+Family mean: **72.7%** of official.
 
 ## flashinfer add_rmsnorm_fp4quant
 
 | shape | official µs | self µs | official | self | self/official |
 |---|---|---|---|---|---|
-| 1024x2048 | 22.02 | 75.23 | 625.0 GB/s | 182.9 GB/s | **29.3%** |
-| 16384x2048 | 274.18 | 293.6 | 803.1 GB/s | 750.0 GB/s | **93.4%** |
-| 4096x5120 | 165.57 | 198.21 | 831.2 GB/s | 694.3 GB/s | **83.5%** |
+| 1024x2048 | 14.11 | 72.26 | 975.4 GB/s | 190.5 GB/s | **19.5%** |
+| 16384x2048 | 275.94 | 294.4 | 798.0 GB/s | 748.0 GB/s | **93.7%** |
+| 4096x5120 | 169.44 | 198.21 | 812.2 GB/s | 694.3 GB/s | **85.5%** |
 
-Family mean: **68.7%** of official.
+Family mean: **66.2%** of official.
 
 ## flashinfer b12x fused MoE (W4A16 NVFP4)
 
 | shape | official µs | self µs | official | self | self/official |
 |---|---|---|---|---|---|
-| experts=128 hidden=2048 intermediate=768 topk=8 tokens=64 | 468.67 | 1267.97 | 5.2 TF/s | 1.9 TF/s | **37.0%** |
-| experts=128 hidden=2048 intermediate=768 topk=8 tokens=2048 | 994.66 | 1624.64 | 77.7 TF/s | 47.6 TF/s | **61.2%** |
-| experts=32 hidden=4096 intermediate=1024 topk=4 tokens=4096 | 2237.89 | 2923.01 | 92.1 TF/s | 70.5 TF/s | **76.6%** |
+| experts=128 hidden=2048 intermediate=768 topk=8 tokens=64 | 464.45 | 884.29 | 5.2 TF/s | 2.7 TF/s | **52.5%** |
+| experts=128 hidden=2048 intermediate=768 topk=8 tokens=2048 | 1170.98 | 1304.0 | 66.0 TF/s | 59.3 TF/s | **89.8%** |
+| experts=32 hidden=4096 intermediate=1024 topk=4 tokens=4096 | 2047.3 | 2664.0 | 100.7 TF/s | 77.4 TF/s | **76.9%** |
 
-Family mean: **58.3%** of official.
+Family mean: **73.1%** of official.
 
 ## Headline
 
-- elementwise_add (FP32, Ampere demo): **95.4%**
-- dense_gemm (FP16, tile 64x64x64): **85.0%**
-- blockscaled GEMM (NVFP4 coop, tile 128x128x128): **50.1%**
-- flashinfer rmsnorm_fp4quant (FP16->NVFP4): **83.8%**
-- flashinfer add_rmsnorm_fp4quant: **68.7%**
-- flashinfer b12x fused MoE (W4A16 NVFP4): **58.3%**
+- elementwise_add (FP32, Ampere demo): **111.3%**
+- dense_gemm (FP16, tile 64x64x64): **93.0%**
+- blockscaled GEMM (NVFP4 coop, tile 128x128x128): **57.0%**
+- flashinfer rmsnorm_fp4quant (FP16->NVFP4): **72.7%**
+- flashinfer add_rmsnorm_fp4quant: **66.2%**
+- flashinfer b12x fused MoE (W4A16 NVFP4): **73.1%**
 
-**Arithmetic mean across families: 73.5% of official CuTeDSL throughput.**
+**Arithmetic mean across families: 78.9% of official CuTeDSL throughput.**
 
 ## FlashMLA decode (self-built sm120 core — separate baseline)
 

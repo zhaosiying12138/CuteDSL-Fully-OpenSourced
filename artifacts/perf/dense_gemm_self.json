@@ -1,16 +1,16 @@
 {
  "family": "dense_gemm",
  "stack": "self",
- "generated_at": "2026-08-27T23:11:45",
+ "generated_at": "2026-08-28T00:27:38",
  "torch_version": "2.13.0+cu130",
  "gpu_meta": {
   "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
   "driver_version": "610.74",
-  "utilization.gpu": "14",
-  "memory.used": "3183",
-  "clocks.sm": "2167",
+  "utilization.gpu": "4",
+  "memory.used": "3802",
+  "clocks.sm": "1755",
   "clocks.mem": "14001",
-  "power.draw": "49.07",
+  "power.draw": "54.20",
   "temperature.gpu": "55",
   "source": "/usr/lib/wsl/lib/nvidia-smi"
  },
@@ -52,8 +52,8 @@
     2048,
     1
    ],
-   "median_us": 245.9,
-   "tflops": 69.9
+   "median_us": 191.3,
+   "tflops": 89.8
   },
   {
    "shape": [
@@ -62,8 +62,8 @@
     4096,
     1
    ],
-   "median_us": 1741.2,
-   "tflops": 78.9
+   "median_us": 1568.6,
+   "tflops": 87.6
   },
   {
    "shape": [
@@ -72,8 +72,8 @@
     512,
     1
    ],
-   "median_us": 129.1,
-   "tflops": 66.9
+   "median_us": 125.5,
+   "tflops": 68.9
   }
  ],
  "kernel": "blackwell_geforce/kernel/dense_gemm/dense_gemm.py UNMODIFIED"

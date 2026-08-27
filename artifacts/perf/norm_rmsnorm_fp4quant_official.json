@@ -1,17 +1,17 @@
 {
  "family": "flashinfer_rmsnorm_fp4quant",
  "stack": "official",
- "generated_at": "2026-08-27T23:13:10",
+ "generated_at": "2026-08-28T00:28:57",
  "torch_version": "2.13.0+cu130",
  "gpu_meta": {
   "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
   "driver_version": "610.74",
   "utilization.gpu": "10",
-  "memory.used": "2965",
-  "clocks.sm": "922",
-  "clocks.mem": "9001",
-  "power.draw": "34.43",
-  "temperature.gpu": "54",
+  "memory.used": "3551",
+  "clocks.sm": "1132",
+  "clocks.mem": "14001",
+  "power.draw": "36.42",
+  "temperature.gpu": "55",
   "source": "/usr/lib/wsl/lib/nvidia-smi"
  },
  "params": {
@@ -37,39 +37,39 @@
  },
  "cases": [
   {
-   "median_us": 15.71,
-   "p10_us": 6.78,
-   "p90_us": 55.9,
-   "min_us": 5.66,
+   "median_us": 19.52,
+   "p10_us": 6.85,
+   "p90_us": 48.38,
+   "min_us": 5.6,
    "warmup": 10,
    "iters": 50,
-   "gb_s": 342.1,
+   "gb_s": 275.3,
    "shape": [
     1024,
     2048
    ]
   },
   {
-   "median_us": 88.8,
-   "p10_us": 87.62,
-   "p90_us": 93.73,
-   "min_us": 87.3,
+   "median_us": 88.67,
+   "p10_us": 87.52,
+   "p90_us": 92.03,
+   "min_us": 85.54,
    "warmup": 10,
    "iters": 50,
-   "gb_s": 968.3,
+   "gb_s": 969.7,
    "shape": [
     16384,
     2048
    ]
   },
   {
-   "median_us": 74.69,
-   "p10_us": 30.62,
-   "p90_us": 93.7,
-   "min_us": 29.34,
+   "median_us": 30.18,
+   "p10_us": 29.79,
+   "p90_us": 30.43,
+   "min_us": 28.19,
    "warmup": 10,
    "iters": 50,
-   "gb_s": 719.5,
+   "gb_s": 1780.6,
    "shape": [
     4096,
     5120

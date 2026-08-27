@@ -1,16 +1,16 @@
 {
  "family": "blockscaled_gemm",
  "stack": "official",
- "generated_at": "2026-08-27T23:13:05",
+ "generated_at": "2026-08-28T00:28:52",
  "torch_version": "2.13.0+cu130",
  "gpu_meta": {
   "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
   "driver_version": "610.74",
-  "utilization.gpu": "25",
-  "memory.used": "3458",
-  "clocks.sm": "2220",
+  "utilization.gpu": "23",
+  "memory.used": "3975",
+  "clocks.sm": "1987",
   "clocks.mem": "14001",
-  "power.draw": "50.27",
+  "power.draw": "47.02",
   "temperature.gpu": "55",
   "source": "/usr/lib/wsl/lib/nvidia-smi"
  },
@@ -56,8 +56,8 @@
     1024,
     1
    ],
-   "median_us": 10.0,
-   "tflops": 214.1
+   "median_us": 12.0,
+   "tflops": 179.5
   },
   {
    "shape": [
@@ -66,8 +66,8 @@
     4096,
     1
    ],
-   "median_us": 78.3,
-   "tflops": 438.9
+   "median_us": 93.4,
+   "tflops": 367.7
   },
   {
    "shape": [
@@ -76,8 +76,8 @@
     4096,
     1
    ],
-   "median_us": 239.0,
-   "tflops": 575.2
+   "median_us": 262.2,
+   "tflops": 524.2
   }
  ],
  "kernel": "blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py UNMODIFIED"

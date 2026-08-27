@@ -1,161 +1,161 @@
 {
- "generated_at": "2026-08-27T23:42:43",
+ "generated_at": "2026-08-28T00:29:37",
  "families": {
   "elementwise": {
    "title": "elementwise_add (FP32, Ampere demo)",
    "cases": [
     {
      "shape": "1024x1024",
-     "official_us": 15.4,
-     "self_us": 16.2,
-     "pct": 95.1
+     "official_us": 20.6,
+     "self_us": 19.4,
+     "pct": 106.2
     },
     {
      "shape": "2048x2048",
-     "official_us": 70.8,
-     "self_us": 78.1,
-     "pct": 90.7
+     "official_us": 81.5,
+     "self_us": 64.4,
+     "pct": 126.6
     },
     {
      "shape": "8192x8192",
-     "official_us": 1250.5,
-     "self_us": 1244.2,
-     "pct": 100.5
+     "official_us": 1278.2,
+     "self_us": 1263.4,
+     "pct": 101.2
     }
    ],
-   "family_pct": 95.4
+   "family_pct": 111.3
   },
   "dense_gemm": {
    "title": "dense_gemm (FP16, tile 64x64x64)",
    "cases": [
     {
      "shape": "2048x2048x2048x1",
-     "official_us": 179.3,
-     "self_us": 245.9,
-     "pct": 72.9
+     "official_us": 180.2,
+     "self_us": 191.3,
+     "pct": 94.2
     },
     {
      "shape": "4096x4096x4096x1",
-     "official_us": 1561.2,
-     "self_us": 1741.2,
-     "pct": 89.7
+     "official_us": 1590.3,
+     "self_us": 1568.6,
+     "pct": 101.4
     },
     {
      "shape": "4104x2056x512x1",
-     "official_us": 119.1,
-     "self_us": 129.1,
-     "pct": 92.3
+     "official_us": 104.7,
+     "self_us": 125.5,
+     "pct": 83.4
     }
    ],
-   "family_pct": 85.0
+   "family_pct": 93.0
   },
   "blockscaled": {
    "title": "blockscaled GEMM (NVFP4 coop, tile 128x128x128)",
    "cases": [
     {
      "shape": "1024x1024x1024x1",
-     "official_us": 10.0,
-     "self_us": 31.7,
-     "pct": 31.5
+     "official_us": 12.0,
+     "self_us": 40.3,
+     "pct": 29.8
     },
     {
      "shape": "1024x4096x4096x1",
-     "official_us": 78.3,
-     "self_us": 131.1,
-     "pct": 59.7
+     "official_us": 93.4,
+     "self_us": 124.3,
+     "pct": 75.1
     },
     {
      "shape": "4096x4096x4096x1",
-     "official_us": 239.0,
-     "self_us": 405.0,
-     "pct": 59.0
+     "official_us": 262.2,
+     "self_us": 395.8,
+     "pct": 66.2
     }
    ],
-   "family_pct": 50.1
+   "family_pct": 57.0
   },
   "norm_rmsnorm_fp4quant": {
    "title": "flashinfer rmsnorm_fp4quant (FP16->NVFP4)",
    "cases": [
     {
      "shape": "1024x2048",
-     "official_us": 15.71,
-     "self_us": 64.0,
-     "pct": 24.5
+     "official_us": 19.52,
+     "self_us": 53.95,
+     "pct": 36.2
     },
     {
      "shape": "16384x2048",
-     "official_us": 88.8,
-     "self_us": 90.85,
-     "pct": 97.7
+     "official_us": 88.67,
+     "self_us": 89.6,
+     "pct": 99.0
     },
     {
      "shape": "4096x5120",
-     "official_us": 74.69,
-     "self_us": 57.79,
-     "pct": 129.2
+     "official_us": 30.18,
+     "self_us": 36.42,
+     "pct": 82.9
     }
    ],
-   "family_pct": 83.8
+   "family_pct": 72.7
   },
   "norm_add_rmsnorm_fp4quant": {
    "title": "flashinfer add_rmsnorm_fp4quant",
    "cases": [
     {
      "shape": "1024x2048",
-     "official_us": 22.02,
-     "self_us": 75.23,
-     "pct": 29.3
+     "official_us": 14.11,
+     "self_us": 72.26,
+     "pct": 19.5
     },
     {
      "shape": "16384x2048",
-     "official_us": 274.18,
-     "self_us": 293.6,
-     "pct": 93.4
+     "official_us": 275.94,
+     "self_us": 294.4,
+     "pct": 93.7
     },
     {
      "shape": "4096x5120",
-     "official_us": 165.57,
+     "official_us": 169.44,
      "self_us": 198.21,
-     "pct": 83.5
+     "pct": 85.5
     }
    ],
-   "family_pct": 68.7
+   "family_pct": 66.2
   },
   "b12x_moe": {
    "title": "flashinfer b12x fused MoE (W4A16 NVFP4)",
    "cases": [
     {
      "shape": "experts=128 hidden=2048 intermediate=768 topk=8 tokens=64",
-     "official_us": 468.67,
-     "self_us": 1267.97,
-     "pct": 37.0
+     "official_us": 464.45,
+     "self_us": 884.29,
+     "pct": 52.5
     },
     {
      "shape": "experts=128 hidden=2048 intermediate=768 topk=8 tokens=2048",
-     "official_us": 994.66,
-     "self_us": 1624.64,
-     "pct": 61.2
+     "official_us": 1170.98,
+     "self_us": 1304.0,
+     "pct": 89.8
     },
     {
      "shape": "experts=32 hidden=4096 intermediate=1024 topk=4 tokens=4096",
-     "official_us": 2237.89,
-     "self_us": 2923.01,
-     "pct": 76.6
+     "official_us": 2047.3,
+     "self_us": 2664.0,
+     "pct": 76.9
     }
    ],
-   "family_pct": 58.3
+   "family_pct": 73.1
   }
  },
  "headline": {
   "convention": "arithmetic mean over the 6 official-baselined families of (family mean of official_us/self_us x 100)",
-  "pct": 73.5,
+  "pct": 78.9,
   "families": {
-   "elementwise": 95.4,
-   "dense_gemm": 85.0,
-   "blockscaled": 50.1,
-   "norm_rmsnorm_fp4quant": 83.8,
-   "norm_add_rmsnorm_fp4quant": 68.7,
-   "b12x_moe": 58.3
+   "elementwise": 111.3,
+   "dense_gemm": 93.0,
+   "blockscaled": 57.0,
+   "norm_rmsnorm_fp4quant": 72.7,
+   "norm_add_rmsnorm_fp4quant": 66.2,
+   "b12x_moe": 73.1
   }
  },
  "mla": {

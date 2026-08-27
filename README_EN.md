@@ -9,10 +9,10 @@ Laptop, with only BSD/Apache-licensed sources and our own code in the path —
 no `_cutlass_ir`, no nvcc/NVRTC/ptxas, no closed official wheel.
 
 Measured on the 5090 Laptop, the six operator families with an official
-CuTeDSL baseline reach an arithmetic mean of **83% of the closed-source
-official implementation** (this capture 82.8%; two formal captures on the
-shared GPU span 73.5%–82.8%, conditions recorded per result; see the
-[performance table](#5-performance) and `artifacts/perf/summary.md`).
+CuTeDSL baseline reach an arithmetic mean of **79% of the closed-source
+official implementation** (capture of record 78.9%; three formal captures
+on the shared GPU span 73.5%–82.8%, conditions recorded per result; see
+the [performance table](#5-performance) and `artifacts/perf/summary.md`).
 
 > **Open-source boundary**: everything from the Python API down to textual
 > PTX is open (BSD-3). PTX is handed to the CUDA driver's JIT at runtime —
@@ -108,13 +108,13 @@ vs the official `nvidia-cutlass-dsl==4.7.0` wheel);
 
 | Operator family | Official baseline | vs official |
 |---|---|---|
-| elementwise add (FP32, Ampere demo, 3 shapes) | ✓ | 113% |
-| dense GEMM (FP16, tile 64×64×64, 3 shapes) | ✓ | 101% |
-| blockscaled GEMM (NVFP4 coop, tile 128×128×128, 3 shapes) | ✓ | 62% |
-| flashinfer rmsnorm_fp4quant (3 shapes) | ✓ | 69% |
-| flashinfer add_rmsnorm_fp4quant (3 shapes) | ✓ | 80% |
-| flashinfer b12x fused MoE (W4A16 NVFP4, 3 configs) | ✓ | 71% |
-| **Arithmetic mean over families** | | **83%** |
+| elementwise add (FP32, Ampere demo, 3 shapes) | ✓ | 111% |
+| dense GEMM (FP16, tile 64×64×64, 3 shapes) | ✓ | 93% |
+| blockscaled GEMM (NVFP4 coop, tile 128×128×128, 3 shapes) | ✓ | 57% |
+| flashinfer rmsnorm_fp4quant (3 shapes) | ✓ | 73% |
+| flashinfer add_rmsnorm_fp4quant (3 shapes) | ✓ | 66% |
+| flashinfer b12x fused MoE (W4A16 NVFP4, 3 configs) | ✓ | 73% |
+| **Arithmetic mean over families** | | **79%** |
 
 - Full per-shape data (µs / GB/s / TFLOP·s⁻¹ / GPU state per capture):
   `artifacts/perf/summary.md` and `artifacts/perf/*.json`;

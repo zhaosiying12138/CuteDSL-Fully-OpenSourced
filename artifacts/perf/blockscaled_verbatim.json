@@ -1,27 +1,27 @@
 {
- "captured": "2026-08-27T23:42:43",
+ "captured": "2026-08-28T00:29:37",
  "gpu": "RTX 5090 Laptop (sm_120a)",
  "kernel": "blackwell_geforce/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent_cooperative.py UNMODIFIED",
  "conditions": {
   "official_gpu_meta": {
    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
    "driver_version": "610.74",
-   "utilization.gpu": "25",
-   "memory.used": "3458",
-   "clocks.sm": "2220",
+   "utilization.gpu": "23",
+   "memory.used": "3975",
+   "clocks.sm": "1987",
    "clocks.mem": "14001",
-   "power.draw": "50.27",
+   "power.draw": "47.02",
    "temperature.gpu": "55",
    "source": "/usr/lib/wsl/lib/nvidia-smi"
   },
   "self_gpu_meta": {
    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
    "driver_version": "610.74",
-   "utilization.gpu": "14",
-   "memory.used": "4448",
-   "clocks.sm": "1485",
+   "utilization.gpu": "9",
+   "memory.used": "4926",
+   "clocks.sm": "780",
    "clocks.mem": "9001",
-   "power.draw": "25.03",
+   "power.draw": "40.97",
    "temperature.gpu": "54",
    "source": "/usr/lib/wsl/lib/nvidia-smi"
   }
@@ -34,11 +34,11 @@
     1024,
     1
    ],
-   "official_us": 10.0,
-   "self_us": 31.7,
-   "official_tflops": 214.1,
-   "self_tflops": 67.8,
-   "ratio": 0.32
+   "official_us": 12.0,
+   "self_us": 40.3,
+   "official_tflops": 179.5,
+   "self_tflops": 53.3,
+   "ratio": 0.3
   },
   {
    "shape": [
@@ -47,11 +47,11 @@
     4096,
     1
    ],
-   "official_us": 78.3,
-   "self_us": 131.1,
-   "official_tflops": 438.9,
-   "self_tflops": 262.1,
-   "ratio": 0.6
+   "official_us": 93.4,
+   "self_us": 124.3,
+   "official_tflops": 367.7,
+   "self_tflops": 276.5,
+   "ratio": 0.75
   },
   {
    "shape": [
@@ -60,11 +60,11 @@
     4096,
     1
    ],
-   "official_us": 239.0,
-   "self_us": 405.0,
-   "official_tflops": 575.2,
-   "self_tflops": 339.4,
-   "ratio": 0.59
+   "official_us": 262.2,
+   "self_us": 395.8,
+   "official_tflops": 524.2,
+   "self_tflops": 347.2,
+   "ratio": 0.66
   }
  ]
 }
