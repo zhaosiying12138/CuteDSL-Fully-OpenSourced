@@ -120,14 +120,15 @@ class MemRangeSpec:
         self.dtype = dtype
         self.count = int(count)
 
-    def realize(self, name: str):
+    def realize(self, name: str, alignment: int | None = None):
         # Int64 barrier storage -> raw smem bytes; else typed array
         name_lower = getattr(self.dtype, "name", str(self.dtype)).lower()
         if "int64" in name_lower:
             # 8-byte mbarrier slots
             e = _b._emitter()
+            align = int(alignment or 8)
             line = (f"    llvm.mlir.global internal @{name}() "
-                    f"{{addr_space = 3 : i32, alignment = 8 : i64}} "
+                    f"{{addr_space = 3 : i32, alignment = {align} : i64}} "
                     f": !llvm.array<{self.count} x i64>")
             e.smem_globals.append(line)
             ptr = e.ssa("!llvm.ptr<3>",
@@ -138,8 +139,9 @@ class MemRangeSpec:
         if width <= 8:
             e = _b._emitter()
             nbytes = self.count * max(1, width) // 8
+            align = int(alignment or 128)
             line = (f"    llvm.mlir.global internal @{name}() "
-                    f"{{addr_space = 3 : i32, alignment = 128 : i64}} "
+                    f"{{addr_space = 3 : i32, alignment = {align} : i64}} "
                     f": !llvm.array<{nbytes} x i8>")
             e.smem_globals.append(line)
             ptr = e.ssa("!llvm.ptr<3>",
@@ -147,7 +149,8 @@ class MemRangeSpec:
             return _b.SmemArray(ptr, nbytes, self.dtype)
         elem = {"float16": "f16", "float32": "f32",
                 "bfloat16": "bf16"}.get(name_lower, "f32")
-        arr = _b.make_smem_tile(name, self.count, self.dtype)
+        arr = _b.make_smem_tile(
+            name, self.count, self.dtype, align=int(alignment or 128))
         return arr
 
 
@@ -166,7 +169,7 @@ class AlignSpec:
         self.alignment = int(alignment)
 
     def realize(self, name):
-        return self.inner.realize(name)
+        return self.inner.realize(name, alignment=self.alignment)
 
 
 def _struct_decorator(cls):
@@ -233,18 +236,26 @@ def compute_tile_shape_or_override(tile_shape_mnk, dtype,
 
 def make_smem_layout_a(a_layout, tile_shape_mnk, dtype, ab_stage,
                        major=None, swizzle=None, permutation_mnk=None):
-    """A-tile staged SMEM layout: ((M, K), stage), K-major (128B swizzle
-    boundary handled by the compiler's composed-layout path)."""
+    """A-tile staged SMEM layout with the canonical f16 128B swizzle."""
     m, n_, k = tile_shape_mnk
     outer = make_layout((m, k))
-    return ComposedLayoutStaged(outer, ab_stage)
+    if swizzle is None and getattr(dtype, "width", 0) == 16:
+        from self_cutedsl.object_model.types import Swizzle
+
+        swizzle = Swizzle(3, 4, 3)
+    return ComposedLayoutStaged(outer, ab_stage, swizzle)
 
 
 def make_smem_layout_b(b_layout, tile_shape_mnk, dtype, ab_stage,
                        major=None, swizzle=None, permutation_mnk=None):
+    """B-tile staged SMEM layout with the canonical f16 128B swizzle."""
     n_, m, k = tile_shape_mnk[1], tile_shape_mnk[0], tile_shape_mnk[2]
     outer = make_layout((n_, k))
-    return ComposedLayoutStaged(outer, ab_stage)
+    if swizzle is None and getattr(dtype, "width", 0) == 16:
+        from self_cutedsl.object_model.types import Swizzle
+
+        swizzle = Swizzle(3, 4, 3)
+    return ComposedLayoutStaged(outer, ab_stage, swizzle)
 
 
 def make_smem_layout_epi(dtype, c_layout, epi_tile, epi_stage):
@@ -310,6 +321,15 @@ class PersistentTileSchedulerParams:
         return []
 
 
+class _PersistentGrid(tuple):
+    """Grid whose scheduler consumes a single linear ``ctaid.x``."""
+
+    flatten_x = True
+
+    def __new__(cls, dimensions):
+        return super().__new__(cls, dimensions)
+
+
 class StaticPersistentTileScheduler:
     """Persistent tile scheduler. Trace model: when the launch grid covers
     every tile (the get_grid_shape default), each CTA owns exactly one tile
@@ -333,7 +353,7 @@ class StaticPersistentTileScheduler:
         g = [int(d) for d in params.grid_shape_mnl]
         while len(g) < 3:
             g.append(1)
-        return tuple(g[:3])
+        return _PersistentGrid(g[:3])
 
     def initial_work_tile_info(self):
         self._current = _WorkInfo(self, self.bidx)

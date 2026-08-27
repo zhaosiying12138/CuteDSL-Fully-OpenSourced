@@ -179,9 +179,16 @@ class _KernelCallStub:
             elif p.kind == "dynamic":
                 mlir_ty = p.dtype.mlir if p.dtype else "i32"
                 abi.append(("jit", p.name, mlir_ty))
-        launch_grid = tuple(grid) + (1,) * (3 - len(grid))
+        requested_grid = tuple(grid) + (1,) * (3 - len(grid))
+        if getattr(grid, "flatten_x", False):
+            linear = 1
+            for dimension in requested_grid[:3]:
+                linear *= int(dimension)
+            launch_grid = (linear, 1, 1)
+        else:
+            launch_grid = requested_grid[:3]
         _host_trace["records"].append(
-            _KernelRecord(emitter, launch_grid[:3], tuple(block), abi))
+            _KernelRecord(emitter, launch_grid, tuple(block), abi))
 
 
 class _CachedLaunch:

@@ -38,6 +38,7 @@ class TensorMapRecipe:
     shape: tuple               # logical, slowest-first (torch order)
     strides_elems: tuple        # per-dim element strides (slowest-first)
     box: tuple                  # box dims, fastest-first (TMA order)
+    swizzle_bytes: int = 0
 
     @property
     def tile_bytes(self) -> int:
@@ -64,12 +65,17 @@ def encode_to_bytes(recipe: TensorMapRecipe, global_address: int) -> bytes:
     if _os.environ.get("DG_TMA_DEBUG"):
         import sys as _s
         print(f"SELF_TMA rank={rank} gdim={[int(d) for d in gdim]} "
-              f"gstr={[int(x) for x in strides]} box={[int(b) for b in box]}",
+              f"gstr={[int(x) for x in strides]} box={[int(b) for b in box]} "
+              f"swizzle={recipe.swizzle_bytes}",
               file=_s.stderr)
+    swizzle = {
+        0: cu.CUtensorMapSwizzle.CU_TENSOR_MAP_SWIZZLE_NONE,
+        128: cu.CUtensorMapSwizzle.CU_TENSOR_MAP_SWIZZLE_128B,
+    }[int(recipe.swizzle_bytes)]
     r = cu.cuTensorMapEncodeTiled(
         dt, rank, global_address, gdim, strides, box, estrides,
         cu.CUtensorMapInterleave.CU_TENSOR_MAP_INTERLEAVE_NONE,
-        cu.CUtensorMapSwizzle.CU_TENSOR_MAP_SWIZZLE_NONE,
+        swizzle,
         cu.CUtensorMapL2promotion.CU_TENSOR_MAP_L2_PROMOTION_NONE,
         cu.CUtensorMapFloatOOBfill.CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE)
     err = r[0] if isinstance(r, tuple) else r

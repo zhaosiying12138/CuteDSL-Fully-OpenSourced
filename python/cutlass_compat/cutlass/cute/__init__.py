@@ -698,10 +698,10 @@ def make_mbarrier(name, count):
     return builtins.make_mbarrier(name, count)
 
 
-def make_smem_tile(name, count, element=None):
+def make_smem_tile(name, count, element=None, align=128):
     from self_cutedsl.frontend import builtins
 
-    return builtins.make_smem_tile(name, count, element)
+    return builtins.make_smem_tile(name, count, element, align=align)
 
 
 def tma_load(tma, smem, bar, coords):

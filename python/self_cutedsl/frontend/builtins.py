@@ -497,7 +497,7 @@ def mbarrier_try_wait_parity(bar, phase: int):
     e.mbarrier_try_wait_parity(bar, phase)
 
 
-def make_smem_tile(name: str, count: int, element=None):
+def make_smem_tile(name: str, count: int, element=None, align: int = 128):
     from .meta import F32
 
     e = _emitter()
@@ -505,7 +505,7 @@ def make_smem_tile(name: str, count: int, element=None):
     mlir = {"f32": "f32", "f16": "f16", "bf16": "bf16",
             "float32": "f32", "float16": "f16",
             "bfloat16": "bf16"}.get(elem.name.lower(), "f32")
-    ptr = e.smem_tile_declare(name, int(count), mlir)
+    ptr = e.smem_tile_declare(name, int(count), mlir, align=align)
     return SmemArray(ptr, int(count), elem)
 
 
@@ -535,6 +535,7 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
     from ..runtime.tensor_map import TensorMapRecipe, CUtensorMapView
 
     _gw = getattr(getattr(gmem_tensor, "element_type", None), "width", 32) or 32
+    smem_swizzle = getattr(smem_layout_or_tensor, "inner", None)
     if hasattr(smem_layout_or_tensor, "outer"):        # ComposedLayoutStaged
         smem_lay = smem_layout_or_tensor.outer
     elif hasattr(smem_layout_or_tensor, "layout"):
@@ -632,6 +633,8 @@ def make_tiled_tma_atom(op, gmem_tensor, smem_layout_or_tensor, cta_layout=None)
                                      strides_elems=(n, 1), box=box)
     else:
         recipe = None
+    if recipe is not None and _is_swizzle_128b(smem_swizzle):
+        recipe.swizzle_bytes = 128
     atom = TmaAtom(op, None, cta_layout or make_layout((1, 1)), smem_lay, box)
     atom.recipe = recipe
     atom.logical_tile_sizes = logical_tile_sizes
@@ -706,12 +709,10 @@ def _ixop(e, op, a, b):
 
 
 def _warp_mn_coord(e, mma, wid, warps_m, warps_n):
-    from .cute_objects import _flatten
-
-    layout = getattr(mma, "atom_layout", None)
-    strides = _flatten(getattr(layout, "stride", (1, warps_m, 1))) \
-        if layout is not None else (1, warps_m, 1)
-    if len(strides) > 1 and int(strides[1]) == 1:
+    # SM120 block-scaled fragments enumerate N warps first; the f16 tiled
+    # MMA used by dense_gemm enumerates M warps first.
+    ak = getattr(getattr(mma, "op", None), "shape_mnk", (16, 8, 16))[2]
+    if ak >= 64:
         wm = _ixop(e, "arith.divsi", wid, _ix(e, warps_n))
         wn = _ixop(e, "arith.remsi", wid, _ix(e, warps_n))
     else:
@@ -727,6 +728,36 @@ def _lane0_predicate():
         "i1",
         'nvvm.inline_ptx "elect.sync _|$0, 0xffffffff;" -> i1',
     )
+
+
+def _is_swizzle_128b(swizzle):
+    return all(
+        getattr(swizzle, name, None) == expected
+        for name, expected in (("b", 3), ("m", 4), ("s", 3))
+    )
+
+
+def _swizzle_128b_f16(e, offset):
+    """Apply Swizzle<3,4,3> to a logical f16 shared-memory offset.
+
+    In bytes: ``x ^ (((x >> 7) & 7) << 4)``. Dividing both source and
+    destination bit positions by two gives the element-index expression.
+    """
+    offset64 = e.ssa(
+        "i64", f"arith.index_cast {offset.name} : index to i64")
+    shift6 = e.ssa("i64", "arith.constant 6 : i64")
+    row_bits = e.ssa(
+        "i64", f"arith.shrui {offset64.name}, {shift6.name} : i64")
+    mask7 = e.ssa("i64", "arith.constant 7 : i64")
+    row_bits = e.ssa(
+        "i64", f"arith.andi {row_bits.name}, {mask7.name} : i64")
+    shift3 = e.ssa("i64", "arith.constant 3 : i64")
+    xor_bits = e.ssa(
+        "i64", f"arith.shli {row_bits.name}, {shift3.name} : i64")
+    physical = e.ssa(
+        "i64", f"arith.xori {offset64.name}, {xor_bits.name} : i64")
+    return e.ssa(
+        "index", f"arith.index_cast {physical.name} : i64 to index")
 
 
 def copy_tiled(tc, src, dst):
@@ -759,6 +790,8 @@ def copy_tiled(tc, src, dst):
 
     mma = tc.mma
     am, an, ak = getattr(mma.op, "shape_mnk", (16, 8, 16))
+    use_swizzle = ak < 64 and _is_swizzle_128b(
+        getattr(tile, "swizzle", None))
     warps_m = int(_flatten(mma.atom_layout)[0]) if mma.atom_layout else 1
     warp_m, warp_n = mma.tile_mn
     if ak >= 64:                        # SM120 block-scaled warp grid
@@ -815,6 +848,8 @@ def copy_tiled(tc, src, dst):
                         _ixop(e, "arith.addi",
                               _ixop(e, "arith.muli", m_row, row_str),
                               _ixop(e, "arith.addi", k0, half8)))
+            if use_swizzle:
+                off = _swizzle_128b_f16(e, off)
             f = e.ldmatrix(e.gep_smem(arr.ptr, off), 4, trans=False)
             regs.extend(e.extract_i32(f, j) for j in range(4))
         dst.frag.slots[dst.k] = regs
@@ -857,6 +892,8 @@ def copy_tiled(tc, src, dst):
                         _ixop(e, "arith.addi",
                               _ixop(e, "arith.muli", n_row, row_str),
                               _ixop(e, "arith.addi", k0, kk8)))
+            if use_swizzle:
+                off = _swizzle_128b_f16(e, off)
             f = e.ldmatrix(e.gep_smem(arr.ptr, off), 2, trans=False)
             regs.extend(e.extract_i32(f, j) for j in range(2))
         dst.frag.slots[dst.k] = regs
