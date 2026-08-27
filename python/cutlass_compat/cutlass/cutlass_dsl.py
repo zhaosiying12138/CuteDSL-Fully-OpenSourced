@@ -75,4 +75,7 @@ def _typed_from_dtype(dtype, ssa=None, value=None):
             ssa = v.ssa
         if value is None or not isinstance(value, (int, float)):
             v = v.value
+    elif hasattr(v, "name") and hasattr(v, "type") and ssa is None:
+        # raw emitter SSA handle: adopt it directly
+        return cls(value=None, dtype=dtype, ssa=v)
     return cls(value=v, dtype=dtype, ssa=ssa)

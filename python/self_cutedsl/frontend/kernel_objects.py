@@ -378,8 +378,11 @@ class _IterPtr:
         e = _emitter()
         off = self._off_ssa(other)
         elem = getattr(getattr(self.kt, "meta", None), "element_type", None)
-        ety = {"Float16": "f16", "Float32": "f32", "Uint8": "i8",
-               "Int32": "i32"}.get(getattr(elem, "name", ""), "f16")
+        ety = {"Float16": "f16", "f16": "f16", "float16": "f16",
+               "Float32": "f32", "f32": "f32", "float32": "f32",
+               "Uint8": "i8", "i8": "i8", "uint8": "i8", "Int8": "i8",
+               "Int32": "i32", "i32": "i32", "int32": "i32",
+               "Uint32": "i32"}.get(getattr(elem, "name", ""), "f16")
         p = e.gep(self.ptr, off, ety)
         return _IterPtr(p, self.kt)
 
