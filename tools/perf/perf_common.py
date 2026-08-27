@@ -48,9 +48,9 @@ def ensure_stack() -> str:
 
 
 def init_cuda_context() -> None:
-    import cutlass
     import torch
     try:
+        import cutlass
         cutlass.cuda.initialize_cuda_context()
     except Exception:
         torch.zeros(1, device="cuda")

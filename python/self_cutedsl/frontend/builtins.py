@@ -39,13 +39,17 @@ class _Arch:
                 e.ssa("index", "gpu.grid_dim z"))
 
     def warp_idx(self):
-        """warp index as (wid, _, _) — tid / 32 (warp-uniform)."""
+        """Linear warp id (tid / 32) as a warp-uniform scalar.
+
+        Official CuTeDSL semantics: kernels compare ``warp_idx == 0`` and
+        do arithmetic on it (flashinfer fp4_common block_reduce computes
+        ``warp_idx // warps_per_row``). The earlier (wid, 0, 0) tuple only
+        survived because make_warp_uniform happened to project element 0.
+        """
         e = _emitter()
         w = e.ssa("index", "arith.constant 32 : index")
         tid = e.thread_id("x")
-        wid = e.idx_binop("arith.divsi", tid, w)
-        return (wid, e.ssa("index", "arith.constant 0 : index"),
-                e.ssa("index", "arith.constant 0 : index"))
+        return e.idx_binop("arith.divsi", tid, w)
 
     def setmaxregister_increase(self, byte_count):
         # warp-specialized register rebalance (constexpr byte count baked in)
@@ -61,9 +65,9 @@ class _Arch:
         _emitter().fence_proxy_async_shared()
 
     def make_warp_uniform(self, v):
-        # tid/32-derived values are already warp-uniform; the (wid,0,0)
-        # thread-index tuple reduces to its linear warp id (both dense_gemm
-        # flavors compare `warp_idx == 0` after this call).
+        # tid/32-derived values are already warp-uniform; a thread-index
+        # tuple (if one ever reaches this call) reduces to its linear warp
+        # id (dense_gemm compares `warp_idx == 0` after this call).
         if isinstance(v, (tuple, list)) and v:
             return v[0]
         return v
