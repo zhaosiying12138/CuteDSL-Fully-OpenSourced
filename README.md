@@ -1,4 +1,4 @@
-# CuteDSL-Fully-OpenSourced
+# CuTeDSL-Fully-OpenSourced
 
 **[English](README_EN.md)**
 
