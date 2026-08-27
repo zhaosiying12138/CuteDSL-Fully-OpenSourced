@@ -27,12 +27,9 @@ def _fp4_dequant(y_uint8: torch.Tensor) -> torch.Tensor:
     flat = y_uint8.reshape(-1)
     lo = lut[(flat & 0xF).long()]
     hi = lut[(flat >> 4).long()]
-    return torch.stack([lo, hi], dim=-1).reshape(*y_uint8.shape, -1)
-
-
-def _sf_dequant(s_uint8: torch.Tensor) -> torch.Tensor:
-    """Decode e4m3 scale-factor bytes to float."""
-    return s_uint8.to(torch.float32)  # uint8 view of e4m3: bit-pattern decode
+    return torch.stack([lo, hi], dim=-1).reshape(
+        *y_uint8.shape[:-1], y_uint8.shape[-1] * 2
+    )
 
 
 def _e4m3_bits_to_float(u8: torch.Tensor) -> torch.Tensor:
@@ -47,30 +44,37 @@ def _e4m3_bits_to_float(u8: torch.Tensor) -> torch.Tensor:
     return torch.where(sign == 1, -val, val)
 
 
+def _nearest_e2m1(values: torch.Tensor) -> torch.Tensor:
+    """Round to the non-uniform E2M1 grid used by the PTX converter."""
+    lut = torch.tensor(
+        [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
+         -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0],
+        device=values.device,
+        dtype=torch.float32,
+    )
+    return lut[(values.unsqueeze(-1) - lut).abs().argmin(dim=-1)]
+
+
 def ref_rmsnorm_fp4(x, w, eps, global_scale):
-    """Reference: rmsnorm -> /global_scale -> per-16-block e4m3 scale +
-    fp4 quantization (round to nearest fp4 grid)."""
+    """True RMSNorm plus the operator's documented half2 NVFP4 recipe."""
     M, H = x.shape
     xf = x.float()
     rstd = torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)
-    y = xf * rstd * w.float() / global_scale
-    yb = y.view(M, H // 16, 16)
-    amax = yb.abs().amax(-1, keepdim=True)
-    sf = (amax / 6.0).clamp(max=448.0)
-    sf = torch.where(sf > 0, sf, torch.ones_like(sf))
-    # e4m3 quantize the scale
-    sf_q = _e4m3_round(sf)
-    scale = sf_q / 6.0
-    yq = (yb / scale).round().clamp(-6, 6)
-    # snap to fp4 grid (0.5 steps)
-    yq = (yq * 2).round() / 2
-    return yq.view(M, H), sf_q.view(M, H // 16)
-
-
-def _e4m3_round(t: torch.Tensor) -> torch.Tensor:
-    exp = torch.floor(torch.log2(t.clamp(min=1e-30))) - 7 + 127
-    step = torch.pow(2.0, torch.floor(torch.log2(t.clamp(min=1e-30))) - 3)
-    return (t / step).round() * step
+    rms = (xf * rstd * w.float()).to(x.dtype).float()
+    # The source deliberately uses half2 multiplication for x*w, followed by
+    # f32 scaling with rstd. Mirror that rounding for exact FP4/SF codes while
+    # retaining ``rms`` above as the independent true-math comparison.
+    quant_input = (x * w).float() * rstd
+    yb = quant_input.view(M, H // 16, 16)
+    sf = (yb.abs().amax(-1) * global_scale / 6.0).clamp(max=448.0)
+    sf_q = sf.to(torch.float8_e4m3fn).float()
+    scaled = torch.where(
+        sf_q.unsqueeze(-1) > 0,
+        yb * global_scale / sf_q.unsqueeze(-1),
+        torch.zeros_like(yb),
+    )
+    yq = _nearest_e2m1(scaled)
+    return rms, yq.view(M, H), sf_q
 
 
 def run_rmsnorm_case(B, H, dtype=torch.float16, eps=1e-6):
@@ -80,7 +84,7 @@ def run_rmsnorm_case(B, H, dtype=torch.float16, eps=1e-6):
 
     x = torch.randn(B, H, device="cuda", dtype=dtype)
     w = torch.randn(H, device="cuda", dtype=dtype)
-    # global scale per NVFP4 recipe (from the official test)
+    # Fixed non-trivial NVFP4 global scale; dequantization must reverse it.
     gs = (448 * 448 * 6.0) ** 0.5 / 448.0
     gs_t = torch.tensor([gs], device="cuda", dtype=torch.float32)
 
@@ -90,17 +94,27 @@ def run_rmsnorm_case(B, H, dtype=torch.float16, eps=1e-6):
     ops.rmsnorm_fp4quant(x, w, y, s, global_scale=gs_t, eps=eps, block_size=16)
     torch.cuda.synchronize()
 
-    y_dec = _fp4_dequant(y)                       # (M, H) f32
-    sf_dec = _e4m3_bits_to_float(s)               # (M, H/16) f32
-    y_ref, sf_ref = ref_rmsnorm_fp4(x, w, eps, gs)
-    # dequant with the kernel's own scales for the value comparison
-    y_re = (y_dec.view(B, H // 16, 16) * sf_dec.unsqueeze(-1) * gs).view(B, H)
-    y_ref_re = (y_ref.view(B, H // 16, 16) * sf_ref.unsqueeze(-1) * gs).view(B, H)
-    ok_vals = torch.allclose(y_re, y_ref_re, atol=0.35, rtol=0.2)
-    sf_close = torch.allclose(sf_dec, sf_ref, rtol=0.25, atol=1e-3)
-    frac = (y_dec.view(B, H // 16, 16) - y_ref.view(B, H // 16, 16)).abs() \
-        .le(0.5).float().mean().item()
-    return ok_vals and sf_close, frac
+    y_dec = _fp4_dequant(y)                        # (M, H) f32
+    sf_dec = _e4m3_bits_to_float(s)                # (M, H/16) f32
+    rms_ref, y_ref, sf_ref = ref_rmsnorm_fp4(x, w, eps, gs)
+
+    # Exact semantic checks for both quantized outputs. Negative and positive
+    # zero compare equal, which is intentional at the mathematical level.
+    frac = y_dec.eq(y_ref).float().mean().item()
+    fp4_exact = frac == 1.0
+    sf_exact = torch.equal(sf_dec, sf_ref)
+
+    # The upstream operator validates the dequantized result against true
+    # RMSNorm math. During quantization the block scale includes global_scale,
+    # so dequantization divides by it.
+    y_dequant = (
+        y_dec.view(B, H // 16, 16) * sf_dec.unsqueeze(-1) / gs
+    ).view(B, H)
+    diff = (y_dequant - rms_ref).abs()
+    rel_diff = diff / (rms_ref.abs() + 1e-8)
+    tight_fraction = ((diff <= 0.5) | (rel_diff <= 0.3)).float().mean().item()
+    loose_all = bool(((diff <= 2.0) | (rel_diff <= 0.5)).all())
+    return fp4_exact and sf_exact and tight_fraction >= 0.99 and loose_all, frac
 
 
 @pytest.mark.sm120

@@ -82,9 +82,15 @@ class TypedScalar:
             elif b.type != a.type and "i64" in (a.type, b.type):
                 wide = "i64"
                 if a.type != wide:
-                    a = e.ssa(wide, f"arith.extsi {a.name} : {a.type} to {wide}")
+                    ext = "arith.extui" if _is_unsigned(self.dtype) \
+                        else "arith.extsi"
+                    a = e.ssa(wide, f"{ext} {a.name} : {a.type} to {wide}")
                 if b.type != wide:
-                    b = e.ssa(wide, f"arith.extsi {b.name} : {b.type} to {wide}")
+                    other_dtype = other.dtype \
+                        if isinstance(other, TypedScalar) else None
+                    ext = "arith.extui" if _is_unsigned(other_dtype) \
+                        else "arith.extsi"
+                    b = e.ssa(wide, f"{ext} {b.name} : {b.type} to {wide}")
         isf = a.type.startswith("f")
         op = op_flt if isf else op_int
         return _make_typed(self.dtype, ssa=e.ssa(a.type, f"{op} {a.name}, {b.name} : {a.type}"))
@@ -198,6 +204,10 @@ class TypedBool(TypedScalar):
 
     def __init__(self, ssa=None, value=None):
         super().__init__(value=value, dtype=None, ssa=ssa)
+
+
+def _is_unsigned(dtype) -> bool:
+    return getattr(dtype, "name", "").startswith(("Uint", "UInt"))
 
 
 def _const_like(e, like, v):

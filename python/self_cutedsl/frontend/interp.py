@@ -144,8 +144,9 @@ class KernelInterpreter:
                     base[tuple(int(c) for c in coord)] = val
                 else:
                     ptr = base.ptr if isinstance(base, KernelTensor) else base
-                    elem = getattr(getattr(base, "meta", None), "element_type", None)
-                    self._store_elem(ptr, idx, val, elem)
+                    meta = getattr(base, "meta", None)
+                    elem = getattr(meta, "element_type", None)
+                    self._store_elem(ptr, idx, val, elem, meta)
         elif isinstance(node, ast.Assign):
             value = self.eval(node.value)
             self.assign(node.targets[0], value)
@@ -476,7 +477,7 @@ class KernelInterpreter:
                 import sys as _s
                 print("LOAD flat idx SSA:", i.name, i.type, file=_s.stderr)
             elem = getattr(meta, "element_type", None)
-            return self._load_elem(base.ptr, i, elem)
+            return self._load_elem(base.ptr, i, elem, meta)
         if isinstance(base, ThrPartition):
             j = int(_const_index(self.eval(slice_node)))
             from . import builtins as _b
@@ -574,14 +575,14 @@ class KernelInterpreter:
 
     # -- raw pointer element access (M2 tensors-as-pointers ABI) -------------
 
-    def _flat_coord(self, idx, elem_meta=None):
+    def _flat_coord(self, idx, tensor_meta=None):
         """Flatten (r, c[, ...]) SSA/int coordinates through the tensor's
         strides into a single i64/i32 offset SSA (or int)."""
         if not isinstance(idx, (tuple, list)):
             return idx
         strides = None
-        if elem_meta is not None:
-            strides = getattr(elem_meta, "stride", None)
+        if tensor_meta is not None:
+            strides = getattr(tensor_meta, "stride", None)
         if not strides:
             strides = tuple(1 for _ in idx)  # fallback: contiguous
         from .emitter import SSA as _SSA
@@ -598,35 +599,42 @@ class KernelInterpreter:
                     v = e.ssa("i64", f"arith.index_cast {v.name} : index to i64")
                 elif v.type == "i32":
                     v = e.ssa("i64", f"arith.extsi {v.name} : i32 to i64")
+                term = e.ssa(
+                    "i64",
+                    f"arith.muli {v.name}, "
+                    f"{e.ssa('i64', f'arith.constant {int(st)} : i64').name} : i64",
+                ) if int(st) != 1 else v
             else:
-                v = int(v) * int(st)
-                if isinstance(v, int):
-                    if total is None:
-                        total = v
-                    else:
-                        total = total + v
-                    continue
-            term = e.ssa("i64", f"arith.muli {v.name}, "
-                                f"{e.ssa('i64', f'arith.constant {int(st)} : i64').name} : i64") \
-                if int(st) != 1 else v
-            total = term if total is None else \
-                e.ssa("i64", f"arith.addi {total.name}, {term.name} : i64")
+                term = int(v) * int(st)
+            if total is None:
+                total = term
+            elif isinstance(total, int) and isinstance(term, int):
+                total += term
+            else:
+                if isinstance(total, int):
+                    total = e.ssa(
+                        "i64", f"arith.constant {total} : i64")
+                if isinstance(term, int):
+                    term = e.ssa(
+                        "i64", f"arith.constant {term} : i64")
+                total = e.ssa(
+                    "i64", f"arith.addi {total.name}, {term.name} : i64")
         return total
 
-    def _load_elem(self, base: SSA, idx, elem=None):
+    def _load_elem(self, base: SSA, idx, elem=None, tensor_meta=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript load needs a pointer, got {base!r}"
-        idx = self._flat_coord(idx)
+        idx = self._flat_coord(idx, tensor_meta)
         ety = "f16" if getattr(elem, "name", "") == "f16" else "f32"
         p = self.emitter.gep(base, idx, ety)
         if ety == "f16":
             return self.emitter.load_gmem_f16(p)
         return self.emitter.load_f32(p)
 
-    def _store_elem(self, base: SSA, idx, val, elem=None):
+    def _store_elem(self, base: SSA, idx, val, elem=None, tensor_meta=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript store needs a pointer, got {base!r}"
-        idx = self._flat_coord(idx)
+        idx = self._flat_coord(idx, tensor_meta)
         _n = getattr(elem, "name", "")
         ety = {"f16": "f16", "Float16": "f16", "float16": "f16",
                "f32": "f32", "Float32": "f32", "float32": "f32",
