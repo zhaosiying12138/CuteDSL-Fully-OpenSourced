@@ -1,5 +1,5 @@
 {
- "captured": "2026-08-26",
+ "captured": "2026-08-27 (post unified recalibration 6eae5c8, audited)",
  "gpu": "RTX 5090 Laptop (sm_120a)",
  "kernel": "blackwell_geforce/dense_gemm.py UNMODIFIED, tile (64,64,64)",
  "cases": [
@@ -11,10 +11,10 @@
     1
    ],
    "official_us": 321.9,
-   "self_us": 388.7,
+   "self_us": 193.9,
    "official_tflops": 53.4,
-   "self_tflops": 44.2,
-   "ratio": 0.83
+   "self_tflops": 88.6,
+   "ratio": 1.66
   },
   {
    "shape": [
@@ -24,10 +24,10 @@
     1
    ],
    "official_us": 1671.9,
-   "self_us": 3790.7,
+   "self_us": 1708.2,
    "official_tflops": 82.2,
-   "self_tflops": 36.3,
-   "ratio": 0.44,
+   "self_tflops": 80.5,
+   "ratio": 0.98,
    "note": "official baseline log measured 1604.8us"
   },
   {
