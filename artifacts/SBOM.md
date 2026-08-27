@@ -7,7 +7,13 @@
 | CuTe object model (algebra via C++ passes) | python/self_cutedsl/object_model | mma_atoms trait table, pipeline drivers |
 | runtime (Driver JIT, tensor-map encode, manifests) | python/self_cutedsl/runtime | cuModuleLoadDataEx + cuTensorMapEncodeTiled only |
 | cutlass_compat (BSD-licensed surface re-export layer) | python/cutlass_compat | maps official wheel API onto self stack |
-| tests | tests/ | 121 tests incl. verbatim flagship kernels (115 host/python + 6 on-GPU runtime) |
+| tests | tests/ | 259 tests incl. verbatim flagship kernels + oracle differential + shape-policy (115 host/python base + differential/policy additions + 6 on-GPU runtime) |
+
+## Toolchain additions (self env, open source)
+| Component | Version | License | Use |
+|---|---|---|---|
+| cutegen (vendored in cutlass_compiler) | header-only, BSD-3 | BSD-3 | layout/shape type engine — the same library the cute dialect and the closed official DSL use |
+| nanobind | 3.0.0 | BSD-3 | Python binding for the in-process cutegen type oracle (tools/cutegen_oracle/) |
 
 ## Third-party
 | Component | Version/Commit | License | Use |

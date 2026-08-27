@@ -23,6 +23,7 @@ self_env:
   python: "3.12.14"
   cuda_python: "13.3.1"
   torch: "2.13.0"
+  nanobind: "3.0.0"      # binding for the in-process cutegen type oracle
 
 # --- host toolchain ---
 host:
@@ -39,3 +40,8 @@ builds:
     tools: [mlir-opt, mlir-tblgen, mlir-translate, llc]
   cutlass_compiler:
     check_cute: "236/236 passed (100%)"
+  cutegen_oracle:
+    source: "third_party/cutlass/cutlass_compiler/cutegen (vendored, BSD-3)"
+    build: "tools/cutegen_oracle/build.sh -> build-oracle/_cutegen_oracle.so"
+    selfcheck: 'composition (4,8):(8,1) o (32,4):(4,1) = (32,4):(1,8)'
+    differential: "136/136 corpus cases agree with the dialect verifier"

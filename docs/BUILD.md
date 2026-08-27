@@ -44,10 +44,15 @@ tools/build_pinned_llvm.sh
 #     Produces build-compiler/tools/cutlass-compiler/cutlass-compiler.
 tools/build_compiler.sh
 
-# (3) The two Python environments (see above).
-tools/make_envs.sh
+# (3) The in-process cutegen type oracle (nanobind binding over the vendored
+#     cutegen headers; needs nanobind in .venv-self — see step 4).
+tools/cutegen_oracle/build.sh
 
-# (4) Pinned flashinfer sources for the verbatim operator corpus
+# (4) The two Python environments (see above).
+tools/make_envs.sh
+.venv-self/bin/pip install nanobind   # for the oracle binding in step 3
+
+# (5) Pinned flashinfer sources for the verbatim operator corpus
 #     (commit from compat/sm120_toolchain.lock.yaml, currently 9d33a28e...).
 tools/fetch_third_party.sh
 ```
