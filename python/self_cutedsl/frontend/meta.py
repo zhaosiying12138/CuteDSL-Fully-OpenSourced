@@ -47,6 +47,7 @@ _TORCH_TO_ELEM = {
     "float32": F32, "float16": F16, "bfloat16": BF16,
     "int32": I32, "int64": I64, "bool": BOOL,
     "int8": I8_, "uint8": I8_, "float8_e4m3fn": I8_, "float8_e5m2": I8_,
+    "float4_e2m1fn_x2": F4E2M1_,
 }
 
 
@@ -163,7 +164,11 @@ def make_tensor_meta(torch_tensor) -> TensorMeta:
     if elem is None:
         raise TypeError(f"unsupported torch dtype {key}")
     stride = tuple(int(s) for s in torch_tensor.stride())
-    return TensorMeta(torch_tensor, elem, tuple(torch_tensor.shape), stride)
+    shape = [int(s) for s in torch_tensor.shape]
+    if key == "float4_e2m1fn_x2":
+        packed_dim = min(range(len(stride)), key=lambda index: stride[index])
+        shape[packed_dim] *= 2
+    return TensorMeta(torch_tensor, elem, tuple(shape), stride)
 
 
 def _row_major(shape) -> tuple:

@@ -43,7 +43,8 @@ def make_copy_atom(op, elem=None, num_bits_per_copy=None, **kw):
     if op.__class__.__name__ == "CopyG2SOp":
         return _CpAsyncAtom(op, elem, num_bits_per_copy or 128)
     if op.__class__.__name__ == "CopyUniversalOp":
-        return _UniversalAtom(op, elem, num_bits_per_copy or 128)
+        bits = num_bits_per_copy or getattr(elem, "width", 32)
+        return _UniversalAtom(op, elem, bits)
     from self_cutedsl.frontend import builtins as _b
     return _b.make_copy_atom(op, elem, **kw)
 
@@ -68,6 +69,9 @@ class TVCopyAsync:
     def partition_D(self, tensor):
         return TVPartView(self, tensor, "D")
 
+    def retile(self, fragment):
+        return fragment
+
 
 class TVPartView:
     """Per-thread partitioned view: subscripts give per-value-unit objects
@@ -82,7 +86,14 @@ class TVPartView:
     @property
     def _geom(self):
         tv = self.tc.tv
-        (T, R), (V, B) = tv.shape[0], tv.shape[1]
+        try:
+            (T, R), (V, B) = tv.shape[0], tv.shape[1]
+        except (TypeError, ValueError):
+            from self_cutedsl.frontend.cute_objects import _flatten
+
+            flat = tuple(_flatten(tv.shape))
+            T = flat[0] if flat else 32
+            R, V, B = 1, 1, 1
         return int(T), int(R), int(V), int(B)
 
     @property
@@ -124,7 +135,12 @@ class TVPartView:
         return r, col
 
     def __getitem__(self, idx):
-        return _TVUnit(self, idx if not isinstance(idx, tuple) else idx[0])
+        if isinstance(idx, tuple):
+            selector = idx[0]
+            if selector is None or isinstance(selector, tuple):
+                return self
+            idx = selector
+        return _TVUnit(self, idx)
 
     def store(self, view):
         """Store a register FragmentView into this shared-memory partition."""

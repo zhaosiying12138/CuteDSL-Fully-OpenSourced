@@ -48,11 +48,29 @@ class _T:
 
 T = _T()
 
+# Official modules import scalar constructors from both ``cutlass`` and
+# ``cutlass.cutlass_dsl``. The dtype objects are callable constructors and
+# carry the MLIR type metadata consumed by the self frontend.
+Int32 = _dt.Int32
+Int64 = _dt.Int64
+Uint8 = _dt.Uint8
+Uint32 = _dt.Uint32
+Uint64 = _dt.Uint64
+Integer = TypedScalar
+
 
 def dsl_user_op(fn):
     """Official decorator marking a function as a device-side op. On the
     self stack these run inside the AST interpreter as plain calls."""
     fn._dsl_user_op = True
+    return fn
+
+
+def extract_mlir_values(fn):
+    return fn
+
+
+def new_from_mlir_values(fn):
     return fn
 
 
@@ -109,8 +127,12 @@ def _cast_scalar_ssa(ssa, source_dtype, target_dtype):
         return e.ssa(dst, f"{op} {ssa.name} : {src} to {dst}")
     if src == "f16" and dst == "f32":
         return e.ssa(dst, f"llvm.fpext {ssa.name} : f16 to f32")
+    if src == "bf16" and dst == "f32":
+        return e.ssa(dst, f"arith.extf {ssa.name} : bf16 to f32")
     if src == "f32" and dst == "f16":
         return e.ssa(dst, f"arith.truncf {ssa.name} : f32 to f16")
+    if src == "f32" and dst == "bf16":
+        return e.ssa(dst, f"arith.truncf {ssa.name} : f32 to bf16")
     if src.startswith("i") and dst.startswith("f"):
         op = "arith.uitofp" if source_unsigned else "arith.sitofp"
         return e.ssa(dst, f"{op} {ssa.name} : {src} to {dst}")

@@ -161,7 +161,12 @@ class TypedScalar:
     def _cmp(self, o, int_pred, flt_pred):
         e = _emitter()
         a = self._coerce(e)
-        b = o._coerce(e) if isinstance(o, TypedScalar) else _const_like(e, a, o)
+        if isinstance(o, TypedScalar):
+            b = o._coerce(e)
+        elif hasattr(o, "name") and hasattr(o, "type"):
+            b = o
+        else:
+            b = _const_like(e, a, o)
         isf = a.type.startswith("f")
         pred = flt_pred if isf else int_pred
         op = "arith.cmpf" if isf else "arith.cmpi"

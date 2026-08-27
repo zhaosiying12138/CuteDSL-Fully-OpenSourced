@@ -74,6 +74,20 @@ class PipelineState:
     def copy(self) -> "PipelineState":
         return PipelineState(self.stage, self.phase, self.pipe_id)
 
+    def __snapshot__(self):
+        return (
+            self.stage,
+            self.phase,
+            self.pipe_id,
+            getattr(self, "num_stages", None),
+            getattr(self, "_count", 0),
+        )
+
+    def __restore__(self, snapshot):
+        self.stage, self.phase, self.pipe_id, num_stages, self._count = snapshot
+        if num_stages is not None:
+            self.num_stages = num_stages
+
     def advance(self, num_stages: int = None):
         """stage+1 wrap / phase flip — SSA select arithmetic (in place)."""
         e = _b._emitter()
@@ -144,6 +158,12 @@ class PipelineTmaAsync:
         self.tx_count = int(tx_count)
         self.barrier_storage = barrier_storage      # SSA ptr (Int64 array)
         self.cta_layout_vmnk = cta_layout_vmnk
+
+    def __snapshot__(self):
+        return getattr(self, "_uses", 0)
+
+    def __restore__(self, snapshot):
+        self._uses = snapshot
 
     # ------------------------------------------------------------------
     @staticmethod

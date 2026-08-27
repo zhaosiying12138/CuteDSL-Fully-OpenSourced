@@ -94,9 +94,12 @@ class _Math:
     def exp(x, loc=None, ip=None, **kw):
         e = _emitter()
         v = x.ssa if isinstance(x, TypedScalar) else x
+        log2e = e.ssa("f32", "arith.constant 1.4426950409e00 : f32")
+        scaled = e.ssa(
+            "f32", f"arith.mulf {v.name}, {log2e.name} : f32")
         r = e.ssa("f32",
                   'nvvm.inline_ptx "ex2.approx.f32 $0, $1;" '
-                  f'ro ({v.name} : f32) -> f32')
+                  f'ro ({scaled.name} : f32) -> f32')
         return _dt.Float32(r)
 
 

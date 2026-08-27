@@ -104,7 +104,17 @@ def inline_asm(result_type, operands, asm, constraints,
             from cutlass._mlir.ir import IrValue
             return IrValue(r)
     ops = [_fold_operand(o, "") for o in operands]
+    # nvvm.inline_ptx has no 8-bit register constraint. Promote byte operands
+    # to a 32-bit register; PTX byte stores consume the low 8 bits.
+    ops = [
+        e.ssa("i32", f"arith.extui {operand.name} : i8 to i32")
+        if operand.type == "i8" else operand
+        for operand in ops
+    ]
     if result_type is None:
+        if not ops:
+            e.raw(f'nvvm.inline_ptx "{_esc(asm)}"')
+            return None
         names = ", ".join(o.name for o in ops)
         tys = ", ".join(o.type for o in ops)
         e.raw(f'nvvm.inline_ptx "{_esc(asm)}" ro ({names} : {tys})')

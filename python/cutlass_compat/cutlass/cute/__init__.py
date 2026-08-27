@@ -91,6 +91,22 @@ class TiledMma:
     """Annotation marker: tiled MMA object."""
 
 
+class MmaAtom:
+    """Annotation marker: warp MMA atom."""
+
+
+class ThrMma:
+    """Annotation marker: per-thread MMA slice."""
+
+
+class TiledCopy:
+    """Annotation marker: tiled copy object."""
+
+
+class Tile:
+    """Annotation marker: compile-time tile meta parameter."""
+
+
 class Shape:
     pass
 
@@ -105,6 +121,9 @@ class TensorSSA:
 
 class TmaTensor:
     """Annotation marker: kernel parameter is a TMA descriptor pointer."""
+
+
+from cutlass._mlir.dialects.cute import AddressSpace  # noqa: E402,F401
 
 
 # ------------------------------------------------------------ layout utils
@@ -179,7 +198,9 @@ def make_tiled_copy(atom, thr_layout, val_shape=None):
     """cute.make_tiled_copy(atom, TV-layout, val-shape): SF smem->rmem copy
     descriptor; lowered at the copy site from the SF trait geometry."""
     from cutlass.cute._fi_copy import _CpAsyncAtom, _UniversalAtom, TVCopyAsync
-    if isinstance(atom, (_CpAsyncAtom, _UniversalAtom)):
+    if isinstance(atom, _CpAsyncAtom):
+        return TVCopyAsync(atom, thr_layout, val_shape)
+    if isinstance(atom, _UniversalAtom) and atom.bits >= 128:
         return TVCopyAsync(atom, thr_layout, val_shape)
     return _SF_copy(atom, thr_layout, val_shape)
 
@@ -190,6 +211,7 @@ class _SF_copy:
         self.thr_layout = thr_layout
         self.val_shape = val_shape
         self.tidx = None
+        self.which = getattr(thr_layout, "_sf_operand", None)
 
     def get_slice(self, tidx):
         self.tidx = tidx
@@ -288,8 +310,10 @@ def make_tensor(iterator, layout):
         nm = TensorMeta(iterator._torch, iterator.element_type,
                         _shape_of(layout), _strides_of(layout, iterator))
         return nm
-    v = _HT(getattr(iterator, "base", None), layout,
-            getattr(iterator, "element", None))
+    base = getattr(iterator, "base", iterator)
+    element = getattr(iterator, "element", None) or \
+        getattr(iterator, "dtype", None)
+    v = _HT(base, layout, element)
     return v
 
 
@@ -342,12 +366,31 @@ def rank(x):
         shp = x.shape
     elif isinstance(x, _M):
         shp = x.shape
+    elif hasattr(x, "shape"):
+        shp = x.shape
     else:
         shp = x
     return len(shp) if isinstance(shp, tuple) else 1
 
 
 def append(tup, *vals):
+    if hasattr(tup, "shape") and hasattr(tup, "stride"):
+        from self_cutedsl.frontend.layout import CuteLayout
+
+        def modes(value, attr):
+            item = getattr(value, attr)
+            return item if isinstance(item, tuple) else (item,)
+
+        shape = modes(tup, "shape")
+        stride = modes(tup, "stride")
+        for value in vals:
+            if hasattr(value, "shape") and hasattr(value, "stride"):
+                shape += modes(value, "shape")
+                stride += modes(value, "stride")
+            else:
+                shape += (value,)
+                stride += (0,)
+        return CuteLayout(shape, stride)
     if not isinstance(tup, tuple):
         tup = (tup,)
     return tup + tuple(vals)
@@ -430,6 +473,66 @@ def group_modes(x, i, j):
         return x      # opaque fragment descriptors keep their identity
 
 
+def logical_divide(x, tiler):
+    """Host layout division; opaque nested tilers retain the source view."""
+    try:
+        return zipped_divide(x, tiler)
+    except (AttributeError, TypeError, ValueError):
+        return x
+
+
+def composition(x, mapping):
+    """Compose host layouts while preserving tensor storage metadata."""
+    # Block-scaled SFA and SFB thread layouts differ by which warp mode is
+    # broadcast: SFA uses (1, 0), SFB uses (0, 1).  Preserve that semantic
+    # distinction while the compatibility layer treats the remaining layout
+    # composition as an identity operation.
+    def _scale_operand(value):
+        if isinstance(value, (tuple, list)):
+            for item in value:
+                operand = _scale_operand(item)
+                if operand is not None:
+                    return operand
+            return None
+        shape = getattr(value, "shape", None)
+        stride = getattr(value, "stride", None)
+        if shape is None or stride is None:
+            return None
+        from self_cutedsl.frontend.cute_objects import _flatten
+
+        flat_shape = tuple(_flatten(shape))
+        flat_stride = tuple(_flatten(stride))
+        if len(flat_shape) == 2 and flat_stride == (1, 0):
+            return "A"
+        if len(flat_shape) == 2 and flat_stride == (0, 1):
+            return "B"
+        return None
+
+    operand = _scale_operand(mapping)
+    if operand is not None:
+        x._sf_operand = operand
+    return x
+
+
+def flatten(x):
+    from self_cutedsl.frontend.cute_objects import Layout as _L, Tensor as _T, _flatten
+
+    if isinstance(x, _T):
+        return _T(
+            x.base,
+            _L(tuple(_flatten(x.layout.shape)), tuple(_flatten(x.layout.stride))),
+            x.element,
+            x.origin,
+        )
+    if isinstance(x, _L):
+        return _L(tuple(_flatten(x.shape)), tuple(_flatten(x.stride)))
+    return x
+
+
+def right_inverse(layout):
+    return layout
+
+
 def _tma_copy(atom, src, dst, tma_bar_ptr=None, mcast_mask=None):
     from self_cutedsl.frontend import builtins
 
@@ -500,6 +603,23 @@ def make_tiled_mma(atom, atom_layout=None, permutation_mnk=None):
     return tm
 
 
+class _BareMmaAtom:
+    """One warp-MMA atom with mutable auxiliary SF operands."""
+
+    def __init__(self, op):
+        self.op = op
+        self.shape_mnk = op.shape_mnk
+        self.tile_mn = (op.shape_mnk[0], op.shape_mnk[1])
+        self._fields = {}
+
+    def set(self, field, value):
+        self._fields[getattr(field, "name", str(field))] = value
+
+
+def make_mma_atom(op):
+    return _BareMmaAtom(op)
+
+
 def gemm(tiled_mma, acc, a_frag, b_frag, *rest):
     from self_cutedsl.frontend import builtins
     from self_cutedsl.frontend.cute_objects import FragK
@@ -516,6 +636,18 @@ def gemm(tiled_mma, acc, a_frag, b_frag, *rest):
     if isinstance(a_frag, (list, tuple)) and len(a_frag) == 2 \
             and hasattr(a_frag[1], "smem_view"):   # block-scaled [data, SF]
         builtins.gemm_bs(tiled_mma, acc, a_frag, b_frag)
+        return acc
+    if isinstance(tiled_mma, _BareMmaAtom) and isinstance(a_frag, FragK):
+        sfa = tiled_mma._fields.get("SFA")
+        sfb = tiled_mma._fields.get("SFB")
+        if sfa is None or sfb is None:
+            raise ValueError("block-scaled MMA atom requires SFA and SFB")
+        builtins.gemm_bs_atom(
+            tiled_mma,
+            acc,
+            [a_frag, sfa],
+            [b_frag, sfb],
+        )
         return acc
     if isinstance(a_frag, FragK):      # 5-arg dense_gemm form
         builtins.gemm_tv(tiled_mma, acc, a_frag, b_frag)
@@ -711,8 +843,10 @@ def slice_(x, coord):
             "slice_ on kernel SSA layouts requires the object-model path")
     if isinstance(x, ComposedLayoutStaged):
         # staged ((tile),(stage)) sliced on the TILE modes
-        shp = _flatten_tuple(x.outer.shape)
-        strd = _flatten_tuple(x.outer.stride)
+        shp = x.outer.shape if isinstance(x.outer.shape, tuple) \
+            else (x.outer.shape,)
+        strd = x.outer.stride if isinstance(x.outer.stride, tuple) \
+            else (x.outer.stride,)
         crd = coord if isinstance(coord, (tuple, list)) else (coord,)
         keep_s, keep_d = [], []
         for s0, d0, c in zip(shp, strd, crd):
@@ -726,8 +860,8 @@ def slice_(x, coord):
         out = tuple(v for v, c in zip(x, crd) if c is None)
         return out
     if isinstance(x, CuteLayout):
-        shp = _flatten_tuple(x.shape)
-        strd = _flatten_tuple(x.stride)
+        shp = x.shape if isinstance(x.shape, tuple) else (x.shape,)
+        strd = x.stride if isinstance(x.stride, tuple) else (x.stride,)
         crd = coord if isinstance(coord, (tuple, list)) else (coord,)
         keep_s, keep_d = [], []
         for s0, d0, c in zip(shp, strd, crd):
@@ -754,13 +888,9 @@ def cosize(x):
         # cosize = 1 + max index over size elements (row-major flatten)
         leaves = _flatten(x.stride)
         shp = _flatten(x.shape)
-        n = 1
-        idx = 0
-        prod = 1
-        # simple static evaluation
         m = 0
         for s0, d0 in zip(shp, leaves):
-            m = max(m, d0 * (int(s0) - 1))
+            m += max(0, int(d0) * (int(s0) - 1))
         return m + 1
     if isinstance(x, (tuple, list)):
         from self_cutedsl.frontend.layout import _prod
@@ -779,8 +909,15 @@ def size_in_bytes(dtype, layout):
               f"lay={type(layout).__name__} "
               f"shape={getattr(getattr(layout, 'outer', layout), 'shape', '?')}",
               file=_s.stderr)
-    if isinstance(layout, (CuteLayout, HostLayout)):
-        n = _prod(_flatten(layout.shape))
+    if isinstance(layout, CuteLayout):
+        n = cosize(layout)
+    elif isinstance(layout, HostLayout):
+        shape = _flatten(layout.shape)
+        stride = _flatten(layout.stride)
+        n = 1 + sum(
+            max(0, int(step) * (int(dim) - 1))
+            for dim, step in zip(shape, stride)
+        )
     elif hasattr(layout, "outer"):          # ComposedLayoutStaged per-stage
         def _walk(t):
             if isinstance(t, (tuple, list)):
@@ -846,4 +983,7 @@ def local_tile(m, tiler, coord):
 def zipped_divide(m, tiler=None):
     from self_cutedsl.frontend import cute_objects as co
 
-    return co.zipped_divide(m, tiler)
+    try:
+        return co.zipped_divide(m, tiler)
+    except (AttributeError, TypeError, ValueError):
+        return m

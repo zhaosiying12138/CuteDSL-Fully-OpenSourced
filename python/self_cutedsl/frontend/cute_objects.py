@@ -185,7 +185,12 @@ class Tensor:
         (mode dropped from the layout, offset recorded in coord_offs)."""
         idx = idx if isinstance(idx, tuple) else (idx,)
         flat_shape = list(_flatten(self.layout.shape))
-        if len(idx) == len(flat_shape) and all(c is not None for c in idx) \
+        def fully_specified(coord):
+            if isinstance(coord, (tuple, list)):
+                return all(fully_specified(item) for item in coord)
+            return coord is not None
+
+        if all(fully_specified(c) for c in idx) \
                 and self.base.__class__.__name__ == "SmemArray":
             return self._load_smem_element(idx)
         # ((tile),(rest))[(k, (None,...))] — hierarchical grid idiom:
@@ -227,11 +232,18 @@ class Tensor:
 
     def _load_smem_element(self, coord):
         from cutlass._bridge_helpers import _emitter
-        from cutlass import Float16, Float32
+        from cutlass import BFloat16, Float16, Float32
 
         e = _emitter()
         total = None
-        for value, stride in zip(coord, _flatten(self.layout.stride)):
+        strides = list(_flatten(self.layout.stride))
+        if len(coord) > len(strides):
+            stage_stride = _prod(_flatten(self.layout.shape))
+            strides.extend(
+                stage_stride * (index + 1)
+                for index in range(len(coord) - len(strides))
+            )
+        for value, stride in zip(coord, strides):
             if hasattr(value, "ssa"):
                 if value.ssa is None:
                     value.ir_value()
@@ -267,7 +279,10 @@ class Tensor:
         if isinstance(total, int):
             total = e.ssa("i64", f"arith.constant {total} : i64")
         elem_name = getattr(self.element, "name", "")
-        elem_type = "f32" if elem_name in ("f32", "Float32") else "f16"
+        elem_type = {
+            "f32": "f32", "Float32": "f32",
+            "bf16": "bf16", "BFloat16": "bf16",
+        }.get(elem_name, "f16")
         ptr = e.ssa(
             "!llvm.ptr<3>",
             f"llvm.getelementptr {self.base.ptr.name}[{total.name}] : "
@@ -277,7 +292,150 @@ class Tensor:
             elem_type,
             f"llvm.load {ptr.name} : !llvm.ptr<3> -> {elem_type}",
         )
-        return (Float32 if elem_type == "f32" else Float16)(loaded)
+        scalar_type = {
+            "f32": Float32,
+            "bf16": BFloat16,
+            "f16": Float16,
+        }[elem_type]
+        return scalar_type(loaded)
+
+    def __setitem__(self, coord, value):
+        if self.base.__class__.__name__ != "SmemArray":
+            raise TypeError("tensor element stores currently require shared memory")
+        coord = coord if isinstance(coord, tuple) else (coord,)
+        from cutlass._bridge_helpers import _emitter
+
+        e = _emitter()
+        if len(coord) == 1 and \
+                getattr(getattr(self, "element", None), "name", "") == "Uint8" and \
+                getattr(getattr(self.base, "elem", None), "name", "") == \
+                "Float4E2M1FN":
+            physical = coord[0]
+            if hasattr(physical, "ssa"):
+                if physical.ssa is None:
+                    physical.ir_value()
+                physical = physical.ssa
+            if not isinstance(physical, SSA):
+                physical = e.ssa(
+                    "i32", f"arith.constant {int(physical)} : i32")
+            elif physical.type == "index":
+                physical = e.ssa(
+                    "i32", f"arith.index_cast {physical.name} : index to i32")
+            packed_cols = int(_flatten(self.layout.shape)[1]) // 2
+            c_packed = e.ssa(
+                "i32", f"arith.constant {packed_cols} : i32")
+            c_two = e.ssa("i32", "arith.constant 2 : i32")
+            c_three = e.ssa("i32", "arith.constant 3 : i32")
+            c_sixteen = e.ssa("i32", "arith.constant 16 : i32")
+            physical_row = e.ssa(
+                "i32",
+                f"arith.divsi {physical.name}, {c_packed.name} : i32",
+            )
+            physical_col = e.ssa(
+                "i32",
+                f"arith.remsi {physical.name}, {c_packed.name} : i32",
+            )
+            row_high = e.ssa(
+                "i32", f"arith.remsi {physical_row.name}, {c_two.name} : i32")
+            logical_row = e.ssa(
+                "i32",
+                f"arith.addi {physical_col.name}, "
+                f"{e.ssa('i32', f'arith.muli {row_high.name}, {c_packed.name} : i32').name} : i32",
+            )
+            xored_col = e.ssa(
+                "i32",
+                f"arith.divsi {physical_row.name}, {c_two.name} : i32",
+            )
+            row_pair = e.ssa(
+                "i32", f"arith.divsi {physical_col.name}, {c_two.name} : i32")
+            xor_group = e.ssa(
+                "i32", f"arith.andi {row_pair.name}, {c_three.name} : i32")
+            xor_bits = e.ssa(
+                "i32", f"arith.muli {xor_group.name}, {c_sixteen.name} : i32")
+            logical_col = e.ssa(
+                "i32", f"arith.xori {xored_col.name}, {xor_bits.name} : i32")
+            logical_base = e.ssa(
+                "i32",
+                f"arith.muli {logical_row.name}, {c_packed.name} : i32",
+            )
+            coord = (e.ssa(
+                "i32",
+                f"arith.addi {logical_base.name}, {logical_col.name} : i32",
+            ),)
+        if len(coord) == 1:
+            strides = [1]
+        else:
+            strides = list(_flatten(self.layout.stride))
+            if len(coord) > len(strides):
+                stage_stride = _prod(_flatten(self.layout.shape))
+                strides.extend(
+                    stage_stride * (index + 1)
+                    for index in range(len(coord) - len(strides))
+                )
+        total = None
+        for item, stride in zip(coord, strides):
+            if hasattr(item, "ssa"):
+                if item.ssa is None:
+                    item.ir_value()
+                item = item.ssa
+            if isinstance(item, SSA):
+                if item.type == "index":
+                    item = e.ssa(
+                        "i64", f"arith.index_cast {item.name} : index to i64")
+                elif item.type != "i64":
+                    item = e.ssa(
+                        "i64", f"arith.extsi {item.name} : {item.type} to i64")
+                term = item
+                if int(stride) != 1:
+                    scale = e.ssa(
+                        "i64", f"arith.constant {int(stride)} : i64")
+                    term = e.ssa(
+                        "i64", f"arith.muli {item.name}, {scale.name} : i64")
+            else:
+                term = int(item) * int(stride)
+            if total is None:
+                total = term
+            elif isinstance(total, int) and isinstance(term, int):
+                total += term
+            else:
+                if isinstance(total, int):
+                    total = e.ssa("i64", f"arith.constant {total} : i64")
+                if isinstance(term, int):
+                    term = e.ssa("i64", f"arith.constant {term} : i64")
+                total = e.ssa(
+                    "i64", f"arith.addi {total.name}, {term.name} : i64")
+        if isinstance(total, int):
+            total = e.ssa("i64", f"arith.constant {total} : i64")
+        name = getattr(self.element, "name", "")
+        elem_type = {
+            "Uint8": "i8", "Int8": "i8", "i8": "i8",
+            "Float32": "f32", "f32": "f32",
+            "BFloat16": "bf16", "bf16": "bf16",
+        }.get(name, "f16")
+        ptr = e.ssa(
+            "!llvm.ptr<3>",
+            f"llvm.getelementptr {self.base.ptr.name}[{total.name}] : "
+            f"(!llvm.ptr<3>, i64) -> !llvm.ptr<3>, {elem_type}",
+        )
+        if hasattr(value, "ssa"):
+            if value.ssa is None:
+                value.ir_value()
+            value = value.ssa
+        if isinstance(value, (int, float)):
+            literal = int(value) if elem_type.startswith("i") else float(value)
+            value = e.ssa(
+                elem_type, f"arith.constant {literal} : {elem_type}")
+        if value.type != elem_type:
+            if value.type == "i32" and elem_type == "i8":
+                value = e.ssa(
+                    "i8", f"arith.trunci {value.name} : i32 to i8")
+            elif value.type == "f32" and elem_type in ("f16", "bf16"):
+                value = e.ssa(
+                    elem_type,
+                    f"arith.truncf {value.name} : f32 to {elem_type}",
+                )
+        e.raw(
+            f"llvm.store {value.name}, {ptr.name} : {elem_type}, !llvm.ptr<3>")
 
 
 def make_tensor(base, layout, element):
@@ -572,6 +730,10 @@ class TiledMma:
         self.op = op
         self.atom_layout = atom_layout or (1, 1, 1)
         am, an, ak = op.shape_mnk
+        self.shape_mnk = op.shape_mnk
+        layout_shape = getattr(self.atom_layout, "shape", self.atom_layout)
+        self.thr_layout_vmnk = make_layout(
+            (32, *tuple(_flatten(layout_shape))))
         self.tile_mn = (am * self.atom_layout[0], an * self.atom_layout[1])
         self.num_warps = num_warps or _prod(_flatten(self.atom_layout))
 
@@ -589,6 +751,17 @@ class MmaThreadSlice:
     def __init__(self, tiled_mma, tidx_ssa):
         self.mma = tiled_mma
         self.tidx = tidx_ssa
+
+    def __getattr__(self, name):
+        return getattr(self.mma, name)
+
+    @property
+    def shape_mnk(self):
+        return self.mma.shape_mnk
+
+    @property
+    def thr_layout_vmnk(self):
+        return self.mma.thr_layout_vmnk
 
     def partition_A(self, sA):
         return PartitionedMmaOperand("A", sA, self.mma, self.tidx)
@@ -656,8 +829,12 @@ class FragmentViewA:
 
     def __getitem__(self, idx):
         # (None, None, k) — k_block selection for gemm/copy targets
-        k = idx[2] if isinstance(idx, tuple) and len(idx) == 3 else idx
-        return FragK(self, int(_const_of(k)))
+        if isinstance(idx, tuple) and len(idx) == 3:
+            atom = 0 if idx[1] is None else int(_const_of(idx[1]))
+            k = idx[2]
+        else:
+            atom, k = 0, idx
+        return FragK(self, int(_const_of(k)), atom)
 
 
 class FragmentViewB(FragmentViewA):
@@ -670,9 +847,10 @@ class FragmentViewB(FragmentViewA):
 class FragK:
     """tCrX[None, None, k] — a fragment sliced at one k block."""
 
-    def __init__(self, frag, k):
+    def __init__(self, frag, k, atom=0):
         self.frag = frag
         self.k = k
+        self.atom = atom
 
 
 def _const_of(v):
@@ -769,11 +947,18 @@ def _r2s_grid(tc):
     am, an, ak = getattr(getattr(mma, "op", None), "shape_mnk",
                          (16, 8, 16))
     warp_m, warp_n = getattr(mma, "tile_mn", (32, 32))
-    # The SM120 block-scaled (m16n8k64) atom layout is four warps along M
-    # and two along N over a 128x128 CTA tile: one warp owns 32x64.
     if ak >= 64:
-        warp_m, warp_n = 32, 64
+        warp_m, warp_n, _ = _blockscaled_warp_tile(mma)
     return warp_m // am, warp_n // an
+
+
+def _blockscaled_warp_tile(mma):
+    """Per-warp tile inside the fixed 128x128 SM120 CTA tile."""
+    atom_layout = getattr(mma, "atom_layout", (4, 2, 1))
+    shape = _flatten(getattr(atom_layout, "shape", atom_layout))
+    warps_m = int(shape[0]) if shape else 4
+    warps_n = int(shape[1]) if len(shape) > 1 else 2
+    return 128 // warps_m, 128 // warps_n, warps_m
 
 
 # ------------------------------------------------- smem->rmem tiled copies
@@ -842,10 +1027,12 @@ class PartitionedAccumulator:
 
     @property
     def shape(self):
-        am, an, _ = self.mma.op.shape_mnk if hasattr(self.mma.op, "shape_mnk") \
+        am, an, ak = self.mma.op.shape_mnk if hasattr(self.mma.op, "shape_mnk") \
             else (16, 8, 16)
         warp_m = self.mma.tile_mn[0]
         warp_n = self.mma.tile_mn[1]
+        if ak >= 64:
+            warp_m, warp_n, _ = _blockscaled_warp_tile(self.mma)
         return (4, warp_m // am, warp_n // an)
 
     @property

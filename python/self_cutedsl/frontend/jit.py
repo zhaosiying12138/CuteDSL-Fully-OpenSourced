@@ -20,6 +20,7 @@ import textwrap
 from dataclasses import dataclass, field
 
 _DEBUG_BIND = False
+_compile_only = False
 
 from ..compiler import compile_mlir_to_ptx, entry_names
 from ..runtime import DriverJit, LaunchManifest
@@ -163,23 +164,9 @@ class _KernelCallStub:
             elif p.kind == "dynamic":
                 mlir_ty = p.dtype.mlir if p.dtype else "i32"
                 abi.append(("jit", p.name, mlir_ty))
-        # persistent schedulers address CTAs by linear ctaid.x — flatten
-        # an (x,y,z) grid request into x-major
-        def _gx(e, runtime_vals=None):
-            return e(runtime_vals) if isinstance(e, DynGridExpr) else int(e)
-        if len(grid) == 3:
-            g0, g1, g2 = grid
-            if any(isinstance(g, DynGridExpr) for g in (g0, g1, g2)):
-                gx = DynGridExpr(
-                    lambda v, a=g0, b=g1, c=g2:
-                        _gx(a, v) * _gx(b, v) * _gx(c, v),
-                    "grid3")
-            else:
-                gx = int(g0) * int(g1) * int(g2)
-        else:
-            gx = grid[0]
+        launch_grid = tuple(grid) + (1,) * (3 - len(grid))
         _host_trace["records"].append(
-            _KernelRecord(emitter, (gx, 1, 1), tuple(block), abi))
+            _KernelRecord(emitter, launch_grid[:3], tuple(block), abi))
 
 
 class _CachedLaunch:
@@ -325,6 +312,9 @@ class JitFunction:
             if plans:
                 self._cache[key] = plans
 
+        if _compile_only:
+            return
+
         needs_sync = False
         for jit, manifest, abi in cached:
             vals = []
@@ -361,6 +351,9 @@ class JitFunction:
             args = args[1:]
         # host-level execution without a new trace context
         bound, key, tensors = self._bind(list(args), kwargs)
+        active_interp = getattr(_builtins, "_active", None)
+        if isinstance(active_interp, KernelInterpreter):
+            return active_interp.inline_call(self.fn, bound)
         return self._trace_with(bound, list(args), nested=True)
 
     def _trace_with(self, bound, args, nested=False):
@@ -470,7 +463,13 @@ def compile_function(fn, *args, **options):
         # __call__ is typically @cute.jit). Semantics: compile-time args
         # are captured; later calls pass only the DYNAMIC args (tensors)
         # and the captured constexpr/stream values are reused.
-        fn(*args)
+        global _compile_only
+        previous = _compile_only
+        _compile_only = True
+        try:
+            fn(*args)
+        finally:
+            _compile_only = previous
         return _CompiledCallable(fn, args)
     raise TypeError("cute.compile expects a callable")
 
@@ -482,22 +481,70 @@ class _CompiledCallable:
     def __init__(self, fn, prime_args):
         self._fn = fn
         self._prime = list(prime_args)
-        self._tensor_slots = [i for i, a in enumerate(prime_args)
-                              if hasattr(a, "data_ptr") and hasattr(a, "shape")]
+
+    @staticmethod
+    def _is_stream(value):
+        return hasattr(value, "cuda_stream") or \
+            type(value).__name__ in ("_FakeStream", "CUstream")
+
+    @classmethod
+    def _compatible(cls, old, new):
+        if hasattr(old, "data_ptr") and hasattr(old, "shape"):
+            return hasattr(new, "data_ptr") and hasattr(new, "shape")
+        if hasattr(old, "_pointer"):
+            return isinstance(new, int) or hasattr(new, "_pointer")
+        if cls._is_stream(old):
+            return cls._is_stream(new)
+        if isinstance(old, bool):
+            return isinstance(new, bool)
+        if isinstance(old, str):
+            return isinstance(new, str)
+        if hasattr(old, "value") and not hasattr(old, "data_ptr"):
+            dtype_name = getattr(getattr(old, "dtype", None), "name", "")
+            if "Float" in dtype_name or dtype_name.startswith("f"):
+                return isinstance(new, (int, float)) and not isinstance(new, bool)
+            return isinstance(new, int) and not isinstance(new, bool)
+        if isinstance(old, int):
+            return isinstance(new, int) and not isinstance(new, bool)
+        if isinstance(old, float):
+            return isinstance(new, (int, float)) and not isinstance(new, bool)
+        return isinstance(new, type(old))
+
+    @classmethod
+    def _captured_slot(cls, value):
+        return cls._is_stream(value) or isinstance(value, (bool, int, float, str)) or \
+            (hasattr(value, "value") and not hasattr(value, "data_ptr"))
 
     def __call__(self, *dyn_args):
         merged = list(self._prime)
-        # tensors AND runtime scalars are re-bound positionally: only the
-        # captured non-arg options (streams etc. beyond the prime arity)
-        # stay from compile time
-        for slot, new in zip(self._tensor_slots, dyn_args):
-            merged[slot] = new
-        for i, new in enumerate(dyn_args):
-            if i < len(merged) and i not in self._tensor_slots:
-                old = merged[i]
-                if isinstance(old, (bool, int, float)) or \
-                        (hasattr(old, "ssa") and hasattr(old, "value")):
-                    merged[i] = new
+        # Runtime args preserve source order and may omit captured constexpr
+        # values.  Bind compatible slots directly; skip a captured slot only
+        # when its type cannot accept the next runtime value.  This keeps
+        # runtime M/eps scalars positional while still skipping a constexpr
+        # launch bound placed immediately before a runtime stream.
+        prime_index = 0
+        for new in dyn_args:
+            while prime_index < len(merged) and not self._compatible(
+                    merged[prime_index], new):
+                old = merged[prime_index]
+                if self._captured_slot(old):
+                    prime_index += 1
+                    continue
+                raise TypeError(
+                    f"runtime argument {type(new).__name__} cannot replace "
+                    f"compiled slot {prime_index} ({type(old).__name__})")
+            if prime_index >= len(merged):
+                raise TypeError("too many runtime arguments for compiled callable")
+            old = merged[prime_index]
+            if isinstance(new, int) and hasattr(old, "_pointer"):
+                new = type(old)(
+                    new,
+                    old.dtype,
+                    old.memspace,
+                    assumed_align=getattr(old, "_assumed_align", None),
+                )
+            merged[prime_index] = new
+            prime_index += 1
         return self._fn(*merged)
 
 
@@ -545,6 +592,10 @@ def _scan_params(fn) -> list[KernelParam]:
     if isinstance(fn, JitFunction):
         fn = fn.fn  # inspect the wrapped def, not the __call__ shim
     sig = inspect.signature(fn)
+    try:
+        resolved_annotations = inspect.get_annotations(fn, eval_str=True)
+    except (NameError, TypeError):
+        resolved_annotations = {}
 
     class _Params(list):
         has_self = False
@@ -565,7 +616,12 @@ def _scan_params(fn) -> list[KernelParam]:
             raise TypeError(
                 f"@cute.jit function '{fn.__name__}' has *args/**kwargs; "
                 f"named parameters required")
-        ann = param.annotation if param.annotation is not inspect.Parameter.empty else None
+        ann = resolved_annotations.get(
+            name,
+            param.annotation
+            if param.annotation is not inspect.Parameter.empty
+            else None,
+        )
         dtype = None
         kind = "dynamic"
         if ann is Constexpr or (isinstance(ann, type) and issubclass(ann, Constexpr)):
@@ -577,7 +633,8 @@ def _scan_params(fn) -> list[KernelParam]:
         elif getattr(ann, "__module__", "") in ("cutlass.cute", "cutlass.dtypes") \
                 and getattr(ann, "__name__", "") in (
                     "Tensor", "Shape", "Layout", "Coord", "TmaTensor",
-                    "ComposedLayout", "CopyAtom", "TiledMma"):
+                    "ComposedLayout", "CopyAtom", "TiledMma", "MmaAtom",
+                    "ThrMma", "TiledCopy", "Tile"):
             kind = {"Tensor": "tensor", "TmaTensor": "tma",
                     "CopyAtom": "tma"}.get(ann.__name__, "constexpr")
         elif str(getattr(ann, "__module__", "")).startswith("cutlass.") \

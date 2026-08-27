@@ -324,6 +324,32 @@ class FragmentView:
         raise NotImplementedError("interpreter handles FragmentView arithmetic")
 
 
+class ScaleFragment:
+    """Register descriptor for SM120 block-scale operands.
+
+    The actual bytes live in the copy lowerer's per-k slot table; this object
+    carries the k selection used by manual atom unrolling.
+    """
+
+    shape = (1, 1, 1)
+
+    def __init__(self, tensor, k=0, atom=0):
+        self.tensor = tensor
+        self.k = k
+        self.atom = atom
+
+    def __getitem__(self, idx):
+        coords = idx if isinstance(idx, tuple) else (idx,)
+        selected = [c for c in coords if c is not None]
+        k = selected[-1] if selected else self.k
+        atom = selected[-2] if len(selected) >= 2 else self.atom
+        return ScaleFragment(self.tensor, k, atom)
+
+    @property
+    def iterator(self):
+        return self
+
+
 class CoordPair:
     """A dynamic (row, col) coordinate as SSA pair."""
 

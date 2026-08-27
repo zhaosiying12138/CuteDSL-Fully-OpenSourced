@@ -20,6 +20,12 @@ class _DType:
     def width(self) -> int:
         return self.bits
 
+    @property
+    def mlir_type(self):
+        from cutlass._mlir.ir import Type
+
+        return Type(self.mlir)
+
     def __repr__(self):
         return self.name
 

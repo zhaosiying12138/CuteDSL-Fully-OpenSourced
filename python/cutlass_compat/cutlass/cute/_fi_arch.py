@@ -28,6 +28,17 @@ def fmax(a, b):
     return _dt.Float32(e.ssa("f32", f"arith.select {c.name}, {va.name}, {vb.name} : f32"))
 
 
+def rcp_approx(self, value):
+    e = _emitter()
+    operand = value.ssa if isinstance(value, TypedScalar) else value
+    result = e.ssa(
+        "f32",
+        'nvvm.inline_ptx "rcp.approx.ftz.f32 $0, $1;" '
+        f"ro ({operand.name} : f32) -> f32",
+    )
+    return _dt.Float32(result)
+
+
 def shuffle_sync_bfly(self, val, offset, mask=0xFFFFFFFF, **kw):
     e = _emitter()
     v = val.ssa if isinstance(val, TypedScalar) else val
@@ -41,6 +52,32 @@ def shuffle_sync_bfly(self, val, offset, mask=0xFFFFFFFF, **kw):
         f'ro ({vi.name}, {off.name} : i32, i32) -> i32')
     r = e.ssa("f32", f"llvm.bitcast {ri.name} : i32 to f32")
     return _dt.Float32(r)
+
+
+def shuffle_sync(self, val, lane, mask=0xFFFFFFFF, **kw):
+    del mask, kw
+    e = _emitter()
+    if isinstance(val, TypedScalar) and val.ssa is None:
+        val.ir_value()
+    if isinstance(lane, TypedScalar) and lane.ssa is None:
+        lane.ir_value()
+    value = val.ssa if isinstance(val, TypedScalar) else val
+    source = lane.ssa if isinstance(lane, TypedScalar) else lane
+    if not hasattr(source, "name"):
+        source = e.ssa("i32", f"arith.constant {int(source)} : i32")
+    was_float = value.type == "f32"
+    bits = e.ssa(
+        "i32", f"llvm.bitcast {value.name} : f32 to i32") \
+        if was_float else value
+    result = e.ssa(
+        "i32",
+        'nvvm.inline_ptx "shfl.sync.idx.b32 $0, $1, $2, 31, -1;" '
+        f"ro ({bits.name}, {source.name} : i32, i32) -> i32",
+    )
+    if was_float:
+        return _dt.Float32(
+            e.ssa("f32", f"llvm.bitcast {result.name} : i32 to f32"))
+    return _dt.Int32(result)
 
 
 def cp_async_commit_group(self):
@@ -74,8 +111,10 @@ def install(arch_instance):
     for name, fn in [
         ("lane_idx", lane_idx),
         ("shuffle_sync_bfly", shuffle_sync_bfly),
+        ("shuffle_sync", shuffle_sync),
         ("barrier", barrier),
         ("fmax", fmax),
+        ("rcp_approx", rcp_approx),
         ("cp_async_commit_group", cp_async_commit_group),
         ("cp_async_wait_group", cp_async_wait_group),
         ("mbarrier_init_fence", mbarrier_init_fence),
@@ -140,13 +179,26 @@ def make_fake_compact_tensor(dtype, shape, stride_order=None, assumed_align=None
     Row-major strides come from the concrete shape; pointers are replaced
     by the real tensors at call time."""
     import torch
-    from cutlass.cute.runtime import from_dlpack
+    from self_cutedsl.frontend.meta import TensorMeta
     shp = tuple(int(s) for s in shape)
     tmap = {"Float16": torch.float16, "BFloat16": torch.bfloat16,
-            "Float32": torch.float32, "Uint8": torch.uint8, "Int32": torch.int32}
+            "Float32": torch.float32, "Float4E2M1FN": torch.uint8,
+            "Uint8": torch.uint8, "Int32": torch.int32}
     tt = tmap.get(getattr(dtype, "name", ""), torch.float32)
     t = torch.empty(shp, dtype=tt, device="cuda")
-    return from_dlpack(t)
+    order = tuple(stride_order or reversed(range(len(shp))))
+    physical_sizes = list(shp)
+    if getattr(dtype, "width", 8) < 8 and order:
+        fastest = order[0]
+        physical_sizes[fastest] = (
+            physical_sizes[fastest] * dtype.width + 7
+        ) // 8
+    strides = [0] * len(shp)
+    running = 1
+    for dimension in order:
+        strides[dimension] = running
+        running *= physical_sizes[dimension]
+    return TensorMeta(t, dtype, shp, tuple(strides))
 
 
 def make_fake_stream(use_tvm_ffi_env_stream=False):

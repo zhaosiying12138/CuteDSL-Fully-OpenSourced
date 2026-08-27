@@ -19,8 +19,23 @@ class SSA:
     def name(self) -> str:
         return f"%v{self.id}"
 
+    @property
+    def llvm_ptr(self):
+        """Official pointer wrappers expose the underlying MLIR value here."""
+        return self
+
     def __repr__(self):
         return f"<SSA {self.name}:{self.type}>"
+
+    def to(self, dtype):
+        """Official scalar conversion spelling used by tensor element loads."""
+        return dtype(self)
+
+    def ir_value(self, loc=None, ip=None):
+        del loc, ip
+        from cutlass._mlir.ir import IrValue
+
+        return IrValue(self)
 
     # -- raw-SSA arithmetic (official support code mixes SSA scalars with
     #    Python ints; previously these raised TypeError) --------------------
@@ -89,6 +104,22 @@ class SSA:
     def __mod__(self, o):
         return self._bin(o, "arith.remsi", "arith.divf")
 
+    def __neg__(self):
+        from cutlass._bridge_helpers import _emitter as _E
+
+        e = _E()
+        if self.type.startswith("f"):
+            zero = e.ssa(self.type, f"arith.constant 0.0 : {self.type}")
+            return e.ssa(
+                self.type,
+                f"arith.subf {zero.name}, {self.name} : {self.type}",
+            )
+        zero = e.ssa(self.type, f"arith.constant 0 : {self.type}")
+        return e.ssa(
+            self.type,
+            f"arith.subi {zero.name}, {self.name} : {self.type}",
+        )
+
 
 class KernelEmitter:
     """Accumulates the body of one gpu.func."""
@@ -125,6 +156,64 @@ class KernelEmitter:
         self._depth += 1
 
     def close_if(self) -> None:
+        self._depth -= 1
+        self.raw("}")
+
+    def open_if_results(self, cond: SSA, types: list[str]) -> list[SSA]:
+        assert cond.type == "i1"
+        results = [SSA(t, self._next_id + i) for i, t in enumerate(types)]
+        self._next_id += len(results)
+        lhs = ", ".join(v.name for v in results)
+        tys = ", ".join(types)
+        self.raw(f"{lhs} = scf.if {cond.name} -> ({tys}) {{")
+        self._depth += 1
+        return results
+
+    def open_else(self) -> None:
+        self._depth -= 1
+        self.raw("} else {")
+        self._depth += 1
+
+    def yield_values(self, values: list[SSA]) -> None:
+        tys = ", ".join(v.type for v in values)
+        self.raw(f"scf.yield {', '.join(v.name for v in values)} : {tys}")
+
+    def open_while(self, init_values: list[SSA]):
+        results = []
+        before_args = []
+        assignments = []
+        for init in init_values:
+            result = SSA(init.type, self._next_id, init.dtype_name)
+            self._next_id += 1
+            arg = SSA(init.type, self._next_id, init.dtype_name)
+            self._next_id += 1
+            results.append(result)
+            before_args.append(arg)
+            assignments.append(f"{arg.name} = {init.name}")
+        lhs = ", ".join(v.name for v in results)
+        tys = ", ".join(v.type for v in init_values)
+        self.raw(
+            f"{lhs} = scf.while ({', '.join(assignments)}) : "
+            f"({tys}) -> ({tys}) {{")
+        self._depth += 1
+        return before_args, results
+
+    def while_condition(self, cond: SSA, values: list[SSA]) -> None:
+        tys = ", ".join(v.type for v in values)
+        self.raw(
+            f"scf.condition({cond.name}) {', '.join(v.name for v in values)} : {tys}")
+
+    def open_while_do(self, types: list[str]) -> list[SSA]:
+        self._depth -= 1
+        self.raw("} do {")
+        self._depth += 1
+        args = [SSA(t, self._next_id + i) for i, t in enumerate(types)]
+        self._next_id += len(args)
+        self.raw("^bb0(" + ", ".join(
+            f"{arg.name}: {arg.type}" for arg in args) + "):")
+        return args
+
+    def close_while(self) -> None:
         self._depth -= 1
         self.raw("}")
 

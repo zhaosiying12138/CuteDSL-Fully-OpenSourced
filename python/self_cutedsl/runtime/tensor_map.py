@@ -81,10 +81,14 @@ def encode_to_bytes(recipe: TensorMapRecipe, global_address: int) -> bytes:
 class CUtensorMapView:
     """A CUtensorMap staged in device global memory."""
 
-    def __init__(self, recipe: TensorMapRecipe, device_tensor: torch.Tensor):
-        assert device_tensor.is_cuda
+    def __init__(self, recipe: TensorMapRecipe, device_tensor: torch.Tensor | int):
+        if not isinstance(device_tensor, int):
+            assert device_tensor.is_cuda
+            address = device_tensor.data_ptr()
+        else:
+            address = device_tensor
         self.recipe = recipe
-        host_bytes = encode_to_bytes(recipe, device_tensor.data_ptr())
+        host_bytes = encode_to_bytes(recipe, address)
         self.device_copy = torch.frombuffer(bytearray(host_bytes),
                                             dtype=torch.uint8).to("cuda")
         assert self.device_copy.data_ptr() % 64 == 0

@@ -10,40 +10,44 @@ from self_cutedsl.frontend.cute_objects import Layout, make_layout, _flatten, _p
 
 
 class LayoutEnum:
-    ROW_MAJOR = 0
-    COLUMN_MAJOR = 1
+    _ROW_MAJOR = 0
+    _COLUMN_MAJOR = 1
 
     def __init__(self, value):
-        self.value = value
+        self.value = value.value if isinstance(value, LayoutEnum) else int(value)
 
     @staticmethod
     def from_tensor(t):
         # row-major: last-dim stride == 1
         st = getattr(t, "stride", None)
         if st is not None and tuple(st)[-1] == 1:
-            return LayoutEnum(LayoutEnum.ROW_MAJOR)
-        return LayoutEnum(LayoutEnum.COLUMN_MAJOR)
+            return LayoutEnum(LayoutEnum._ROW_MAJOR)
+        return LayoutEnum(LayoutEnum._COLUMN_MAJOR)
 
     def is_k_major_a(self):
-        return self.value == LayoutEnum.ROW_MAJOR
+        return self.value == LayoutEnum._ROW_MAJOR
 
     def is_k_major_b(self):
-        return self.value == LayoutEnum.ROW_MAJOR
+        return self.value == LayoutEnum._ROW_MAJOR
 
     def is_m_major_a(self):
         # A is (m,k): m-major when the m stride is 1
-        return self.value == LayoutEnum.COLUMN_MAJOR
+        return self.value == LayoutEnum._COLUMN_MAJOR
 
     def is_n_major_b(self):
         # B is (n,k): n-major when the n stride is 1
-        return self.value == LayoutEnum.COLUMN_MAJOR
+        return self.value == LayoutEnum._COLUMN_MAJOR
 
     def is_n_major_c(self):
-        return self.value == LayoutEnum.ROW_MAJOR
+        return self.value == LayoutEnum._ROW_MAJOR
 
     def is_m_major_c(self):
         # C is (m,n): m-major when the m stride is 1
-        return self.value == LayoutEnum.COLUMN_MAJOR
+        return self.value == LayoutEnum._COLUMN_MAJOR
+
+
+LayoutEnum.ROW_MAJOR = LayoutEnum(LayoutEnum._ROW_MAJOR)
+LayoutEnum.COLUMN_MAJOR = LayoutEnum(LayoutEnum._COLUMN_MAJOR)
 
 
 class HardwareInfo:
@@ -300,6 +304,10 @@ class PersistentTileSchedulerParams:
         self.problem_tiles = t
         self.grid_size = w
         self.waves = (t + w - 1) // w
+
+    def __extract_mlir_values__(self):
+        """Official runtime-struct hook; self stack keeps this host metadata."""
+        return []
 
 
 class StaticPersistentTileScheduler:

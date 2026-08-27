@@ -3,6 +3,15 @@
 # operand-dtype pairs accepted by mma.sync.kind::mxf8f6f4 on sm_120a
 # (a_dtype, b_dtype) tuples; the dispatch module consults this table.
 import cutlass
+import enum
+
+
+class Field(enum.Enum):
+    A = "A"
+    B = "B"
+    C = "C"
+    SFA = "SFA"
+    SFB = "SFB"
 
 MXF8F6F4_SUPPORTED_PAIRS = (
     (cutlass.Float8E4M3FN, cutlass.Float8E4M3FN),

@@ -37,6 +37,15 @@ def _stub(name: str, **attrs):
     return mod
 
 
+def _package(name: str, path: Path):
+    if name in sys.modules:
+        return sys.modules[name]
+    mod = types.ModuleType(name)
+    mod.__path__ = [str(path)]
+    sys.modules[name] = mod
+    return mod
+
+
 def ensure_loaded() -> types.ModuleType:
     """Idempotently assemble `flashinfer` around the self stack; returns the
     cute_dsl subpackage."""
@@ -97,3 +106,57 @@ def load_operator(module_name: str):
         _load(full, VENDOR / "cute_dsl" / f"{module_name}.py", pkg=False)
         setattr(cd, module_name, sys.modules[full])
     return sys.modules[full]
+
+
+def load_b12x_operator():
+    """Load the unmodified SM12x MoE entry and its real NVFP4 kernel stack."""
+    ensure_loaded()
+    load_operator("fp4_common")
+    load_operator("utils")
+
+    # API tracing and CUDA-version discovery are host integrations outside the
+    # kernel path under test. Keep them inert, as for the existing JIT stubs.
+    _stub(
+        "flashinfer.trace.templates.moe",
+        b12x_fused_moe_trace=None,
+        b12x_moe_wrapper_run_trace=None,
+    )
+    _stub(
+        "flashinfer.jit.cpp_ext",
+        get_cuda_version=lambda: types.SimpleNamespace(major=13, minor=3),
+    )
+
+    gemm = VENDOR / "gemm"
+    fused = VENDOR / "fused_moe"
+    fused_cute = fused / "cute_dsl"
+    sm12x = fused_cute / "blackwell_sm12x"
+    _package("flashinfer.gemm", gemm)
+    _package("flashinfer.gemm.kernels", gemm / "kernels")
+    _package("flashinfer.fused_moe", fused)
+    _package("flashinfer.fused_moe.cute_dsl", fused_cute)
+    _package("flashinfer.fused_moe.cute_dsl.blackwell_sm12x", sm12x)
+
+    dense_name = "flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x"
+    if dense_name not in sys.modules:
+        _load(
+            dense_name,
+            gemm / "kernels/dense_blockscaled_gemm_sm120_b12x.py",
+            pkg=False,
+        )
+    for module_name in (
+        "moe_activation",
+        "moe_static_kernel",
+        "moe_micro_kernel",
+        "moe_dynamic_kernel",
+    ):
+        full = f"flashinfer.fused_moe.cute_dsl.blackwell_sm12x.{module_name}"
+        if full not in sys.modules:
+            _load(full, sm12x / f"{module_name}.py", pkg=False)
+
+    dispatch_name = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch"
+    if dispatch_name not in sys.modules:
+        _load(dispatch_name, sm12x / "moe_dispatch.py", pkg=False)
+    entry_name = "flashinfer.fused_moe.cute_dsl.b12x_moe"
+    if entry_name not in sys.modules:
+        _load(entry_name, fused_cute / "b12x_moe.py", pkg=False)
+    return sys.modules[entry_name]

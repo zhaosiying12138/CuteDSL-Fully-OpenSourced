@@ -96,9 +96,38 @@ class KernelInterpreter:
 
     # ------------------------------------------------------------------ run
     def run(self) -> KernelEmitter:
+        self._did_return = False
+        self._return_value = None
         for stmt in self.body:
             self.exec_stmt(stmt)
+            if self._did_return:
+                break
         return self.emitter
+
+    def inline_call(self, fn, bound):
+        """Interpret a nested @cute.jit body into this kernel's emitter."""
+        child = object.__new__(KernelInterpreter)
+        child.fn = fn
+        child.params = []
+        child.env = dict(bound)
+        child.emitter = self.emitter
+        child.tidx_ssa = self.tidx_ssa
+        child.tree = ast.parse(textwrap.dedent(_get_source(fn)))
+        child.body = child.tree.body[0].body
+        child._did_return = False
+        child._return_value = None
+        from . import builtins as _builtins
+
+        previous = _builtins._active
+        _builtins._active = child
+        try:
+            for stmt in child.body:
+                child.exec_stmt(stmt)
+                if child._did_return:
+                    break
+            return child._return_value
+        finally:
+            _builtins._active = previous
 
     # --------------------------------------------------------------- stmts
     def exec_stmt(self, node: ast.stmt) -> None:
@@ -142,6 +171,10 @@ class KernelInterpreter:
                     # host-elementwise write through the meta's torch tensor
                     coord = idx if isinstance(idx, (tuple, list)) else (idx,)
                     base[tuple(int(c) for c in coord)] = val
+                elif base.__class__.__module__ == \
+                        "self_cutedsl.frontend.cute_objects" and \
+                        base.__class__.__name__ == "Tensor":
+                    base[idx] = val
                 else:
                     ptr = base.ptr if isinstance(base, KernelTensor) else base
                     meta = getattr(base, "meta", None)
@@ -164,13 +197,37 @@ class KernelInterpreter:
             self.exec_while(node)
         elif isinstance(node, (ast.Pass,)):
             pass
+        elif isinstance(node, ast.ImportFrom):
+            import importlib
+
+            if node.level:
+                raise InterpError("relative imports inside kernels unsupported")
+            module = importlib.import_module(node.module)
+            for alias in node.names:
+                self.env[alias.asname or alias.name] = getattr(module, alias.name)
+        elif isinstance(node, ast.Import):
+            import importlib
+
+            for alias in node.names:
+                module = importlib.import_module(alias.name)
+                self.env[alias.asname or alias.name.split(".")[0]] = module
+        elif isinstance(node, ast.ClassDef):
+            # Kernel-local @cute.struct declarations are compile-time Python
+            # metadata. Execute just the class statement with the trace env.
+            namespace = dict(getattr(self.fn, "__globals__", {}))
+            namespace.update(self.env)
+            module = ast.fix_missing_locations(
+                ast.Module(body=[node], type_ignores=[]))
+            exec(compile(module, f"<kernel-class:{node.name}>", "exec"), namespace)
+            self.env[node.name] = namespace[node.name]
         elif isinstance(node, ast.Return):
-            pass  # implicit gpu.return appended by emitter
+            self._return_value = self.eval(node.value) if node.value else None
+            self._did_return = True
         else:
             raise InterpError(f"unsupported statement {ast.dump(node)[:80]}")
 
     def exec_if(self, node: ast.If) -> None:
-        cond = self.eval(node.test)
+        cond = _unwrap_typed_scalar(self.eval(node.test))
         if isinstance(cond, SSA):
             # region semantics: assignments inside scf.if are branch-local
             # (no yield machinery); restore the pre-if env afterwards so
@@ -178,6 +235,41 @@ class KernelInterpreter:
             snapshot = dict(self.env)
             snaps = [(v, v.__snapshot__()) for v in snapshot.values()
                      if hasattr(type(v), "__snapshot__")]
+            carried = []
+            for name in sorted(self._assigned_names(node.body + node.orelse)):
+                if name not in snapshot:
+                    continue
+                value = self._as_ssa(snapshot[name])
+                if value is not None:
+                    carried.append((name, value))
+            if carried:
+                results = self.emitter.open_if_results(
+                    cond, [value.type for _, value in carried])
+                for s in node.body:
+                    self.exec_stmt(s)
+                then_values = [
+                    self._as_ssa(self.env.get(name, snapshot[name]), template=value)
+                    for name, value in carried
+                ]
+                self.emitter.yield_values(then_values)
+                self.emitter.open_else()
+                self.env = dict(snapshot)
+                for value, snap in snaps:
+                    value.__restore__(snap)
+                for s in node.orelse:
+                    self.exec_stmt(s)
+                else_values = [
+                    self._as_ssa(self.env.get(name, snapshot[name]), template=value)
+                    for name, value in carried
+                ]
+                self.emitter.yield_values(else_values)
+                self.emitter.close_if()
+                self.env = dict(snapshot)
+                for value, snap in snaps:
+                    value.__restore__(snap)
+                for (name, _), result in zip(carried, results):
+                    self.env[name] = result
+                return
             self.emitter.open_if(cond)
             for s in node.body:
                 self.exec_stmt(s)
@@ -204,12 +296,14 @@ class KernelInterpreter:
     def exec_while(self, node: ast.While) -> None:
         """Python while: constexpr conditions trace as (multi-)trip inline
         loops; SSA conditions need scf.while (honest boundary for now)."""
+        canonical_for = self._while_as_for(node)
+        if canonical_for is not None:
+            self.exec_for(canonical_for)
+            return
         cond = self.eval(node.test)
         if not isinstance(cond, (bool, int)):
-            raise NotImplementedError(
-                "dynamic while-loop (scf.while) not yet supported; "
-                "condition must be compile-time (persistent scheduler with "
-                "grid covering all tiles traces single-trip)")
+            self._exec_dynamic_while(node)
+            return
         guard = 0
         while bool(cond):
             for st in node.body:
@@ -219,6 +313,180 @@ class KernelInterpreter:
             if guard > 10000:
                 raise InterpError("while-loop trace guard tripped")
 
+    def _exec_dynamic_while(self, node: ast.While) -> None:
+        snapshot = dict(self.env)
+        carried = []
+        for name in sorted(self._assigned_names(node.body)):
+            if name not in snapshot:
+                continue
+            original = snapshot[name]
+            value = self._as_ssa(original)
+            if value is not None:
+                carried.append((name, None, value))
+            elif isinstance(original, (tuple, list)):
+                for index, item in enumerate(original):
+                    item_ssa = self._as_ssa(item)
+                    if item_ssa is not None:
+                        carried.append((name, index, item_ssa))
+        state_snapshots = {}
+        for name, value in snapshot.items():
+            if hasattr(value, "stage") and hasattr(value, "phase"):
+                stage = self._as_ssa(value.stage)
+                phase = self._as_ssa(value.phase)
+                if stage is not None and phase is not None:
+                    state_snapshots[name] = value.__snapshot__() \
+                        if hasattr(value, "__snapshot__") else \
+                        (value.stage, value.phase)
+                    carried.append((name, "stage", stage))
+                    carried.append((name, "phase", phase))
+        if not carried:
+            assigned = sorted(self._assigned_names(node.body))
+            raise NotImplementedError(
+                "dynamic while-loop without scalar loop-carried values in "
+                f"{getattr(self.fn, '__name__', '<kernel>')}: assigned={assigned}, "
+                f"available={[(name, type(snapshot.get(name)).__name__) for name in assigned]}")
+
+        before_args, results = self.emitter.open_while(
+            [value for _, _, value in carried])
+
+        def bind(name, field, value):
+            if field is None:
+                self.env[name] = value
+            elif isinstance(field, int):
+                original = self.env[name]
+                sequence = list(original)
+                sequence[field] = value
+                self.env[name] = type(original)(sequence)
+            else:
+                setattr(self.env[name], field, value)
+
+        def read(name, field):
+            value = self.env[name]
+            if field is None:
+                return value
+            if isinstance(field, int):
+                return value[field]
+            return getattr(value, field)
+
+        self.env = dict(snapshot)
+        for name, saved in state_snapshots.items():
+            self.env[name].__restore__(saved)
+        for (name, attr, _), arg in zip(carried, before_args):
+            bind(name, attr, arg)
+        cond = _unwrap_typed_scalar(self.eval(node.test))
+        if not isinstance(cond, SSA) or cond.type != "i1":
+            raise InterpError("dynamic while condition did not lower to i1")
+        condition_values = [
+            self._as_ssa(
+                read(name, attr),
+                template=value,
+            )
+            for name, attr, value in carried
+        ]
+        self.emitter.while_condition(cond, condition_values)
+
+        body_args = self.emitter.open_while_do(
+            [value.type for _, _, value in carried])
+        self.env = dict(snapshot)
+        for name, saved in state_snapshots.items():
+            self.env[name].__restore__(saved)
+        for (name, attr, _), arg in zip(carried, body_args):
+            bind(name, attr, arg)
+        for stmt in node.body:
+            self.exec_stmt(stmt)
+        yielded = [
+            self._as_ssa(
+                read(name, attr),
+                template=value,
+            )
+            for name, attr, value in carried
+        ]
+        self.emitter.yield_values(yielded)
+        self.emitter.close_while()
+
+        self.env = dict(snapshot)
+        for name, saved in state_snapshots.items():
+            self.env[name].__restore__(saved)
+        for (name, attr, _), result in zip(carried, results):
+            bind(name, attr, result)
+
+    @staticmethod
+    def _assigned_names(nodes) -> set[str]:
+        assigned = set()
+
+        def add_target(target):
+            if isinstance(target, ast.Name):
+                assigned.add(target.id)
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                for elt in target.elts:
+                    add_target(elt)
+
+        def visit(node):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    add_target(target)
+            elif isinstance(node, ast.AugAssign):
+                add_target(node.target)
+            for child in ast.iter_child_nodes(node):
+                visit(child)
+
+        for node in nodes:
+            visit(node)
+        return assigned
+
+    def _as_ssa(self, value, template=None):
+        if hasattr(value, "ssa"):
+            if value.ssa is None:
+                value.ir_value()
+            if isinstance(value.ssa, SSA):
+                return value.ssa
+        value = _unwrap_typed_scalar(value)
+        if isinstance(value, SSA):
+            return value
+        if template is None:
+            return None
+        return self._const_like(template, value)
+
+    @staticmethod
+    def _while_as_for(node: ast.While):
+        """Recognize ``while i < end: ...; i += step`` as an scf.for."""
+        if not isinstance(node.test, ast.Compare) or len(node.test.ops) != 1 \
+                or not isinstance(node.test.ops[0], ast.Lt) \
+                or not isinstance(node.test.left, ast.Name) or not node.body:
+            return None
+        name = node.test.left.id
+        tail = node.body[-1]
+        if isinstance(tail, ast.AugAssign) \
+                and isinstance(tail.target, ast.Name) \
+                and tail.target.id == name \
+                and isinstance(tail.op, ast.Add):
+            step = tail.value
+        elif isinstance(tail, ast.Assign) and len(tail.targets) == 1 \
+                and isinstance(tail.targets[0], ast.Name) \
+                and tail.targets[0].id == name \
+                and isinstance(tail.value, ast.BinOp) \
+                and isinstance(tail.value.op, ast.Add) \
+                and isinstance(tail.value.left, ast.Name) \
+                and tail.value.left.id == name:
+            step = tail.value.right
+        else:
+            return None
+        return ast.For(
+            target=ast.Name(id=name, ctx=ast.Store()),
+            iter=ast.Call(
+                func=ast.Name(id="range", ctx=ast.Load()),
+                args=[
+                    ast.Name(id=name, ctx=ast.Load()),
+                    node.test.comparators[0],
+                    step,
+                ],
+                keywords=[],
+            ),
+            body=node.body[:-1],
+            orelse=node.orelse,
+            type_comment=None,
+        )
+
     def exec_for(self, node: ast.For) -> None:
         # `for x in range(...)` / cutlass.range_constexpr(...) supported
         fname = ""
@@ -227,7 +495,7 @@ class KernelInterpreter:
             fname = getattr(f, "id", None) or getattr(f, "attr", "")                 if isinstance(f, (ast.Name, ast.Attribute)) else ""
         assert isinstance(node.iter, ast.Call) and fname in ("range", "range_constexpr"), \
             f"only range()/range_constexpr() loops supported (got {fname!r})"
-        iter_args = [self.eval(a) for a in node.iter.args]
+        iter_args = [_unwrap_typed_scalar(self.eval(a)) for a in node.iter.args]
         if fname == "range_constexpr":
             iter_args = [int(getattr(a, "value", a)) for a in iter_args]
         import os as _os
@@ -254,13 +522,16 @@ class KernelInterpreter:
         ub = self._to_index(args[1]) if not isinstance(args[1], int) else self._index_const(args[1])
         st = self._to_index(args[2]) if not isinstance(args[2], int) else self._index_const(args[2])
         tgt = node.target.id if isinstance(node.target, ast.Name) else None
+        loop_snapshot = dict(self.env)
         carried = self._loop_carried(node.body, tgt)
         init_vals, init_shapes = [], []
+        scalar_templates = {}
         for name in carried:
             v = self.env[name]
             if isinstance(v, SSA):
                 init_vals.append(v)
                 init_shapes.append((name, None))
+                scalar_templates[name] = v
             else:
                 init_vals.extend(v)
                 init_shapes.append((name, len(v)))
@@ -281,9 +552,16 @@ class KernelInterpreter:
             cur = []
             for name, length in init_shapes:
                 v = self.env[name]
-                cur.extend([v] if isinstance(v, SSA) else list(v))
+                if length is None:
+                    cur.append(self._as_ssa(v, template=scalar_templates[name]))
+                else:
+                    cur.extend(
+                        self._as_ssa(item, template=init_vals[0])
+                        for item in v
+                    )
             self.emitter.yield_for(cur)
         self.emitter.close_for()
+        self.env = dict(loop_snapshot)
         k = 0
         for name, length in init_shapes:
             if length is None:
@@ -336,6 +614,10 @@ class KernelInterpreter:
                 self.assign(t, v)
         elif isinstance(target, ast.Name):
             self.env[target.id] = value
+        elif isinstance(target, ast.Subscript):
+            base = self.eval(target.value)
+            idx = self.eval(target.slice)
+            base[idx] = value
         else:
             raise InterpError(f"unsupported assign target {ast.dump(target)[:60]}")
 
@@ -372,6 +654,11 @@ class KernelInterpreter:
             return tuple(vals)
         if isinstance(node, ast.List):
             return [self.eval(e) for e in node.elts]
+        if isinstance(node, ast.Dict):
+            return {
+                self.eval(key): self.eval(value)
+                for key, value in zip(node.keys, node.values)
+            }
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
             lv = self.eval(node.left)
             rv = self.eval(node.right)
@@ -434,9 +721,24 @@ class KernelInterpreter:
                 out.append(self.eval(node.elt))
             return out
         if isinstance(node, ast.IfExp):
-            cond = self.eval(node.test)
+            cond = _unwrap_typed_scalar(self.eval(node.test))
             if isinstance(cond, SSA):
-                raise InterpError("dynamic IfExp unsupported; use if/else stmt")
+                def select_value(expr):
+                    value = self.eval(expr)
+                    if hasattr(value, "ssa"):
+                        if value.ssa is None:
+                            value.ir_value()
+                        return value.ssa
+                    return value
+
+                true_value = select_value(node.body)
+                false_value = select_value(node.orelse)
+                true_ssa, false_ssa = self._pair(true_value, false_value)
+                return self.emitter.ssa(
+                    true_ssa.type,
+                    f"arith.select {cond.name}, {true_ssa.name}, "
+                    f"{false_ssa.name} : {true_ssa.type}",
+                )
             return self.eval(node.body) if cond else self.eval(node.orelse)
         if isinstance(node, ast.JoinedStr):
             parts = []
@@ -579,6 +881,10 @@ class KernelInterpreter:
         """Flatten (r, c[, ...]) SSA/int coordinates through the tensor's
         strides into a single i64/i32 offset SSA (or int)."""
         if not isinstance(idx, (tuple, list)):
+            if hasattr(idx, "ssa"):
+                if idx.ssa is None:
+                    idx.ir_value()
+                return idx.ssa
             return idx
         strides = None
         if tensor_meta is not None:
@@ -625,11 +931,18 @@ class KernelInterpreter:
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
             f"subscript load needs a pointer, got {base!r}"
         idx = self._flat_coord(idx, tensor_meta)
-        ety = "f16" if getattr(elem, "name", "") == "f16" else "f32"
+        elem_name = getattr(elem, "name", "")
+        ety = {
+            "f16": "f16", "Float16": "f16", "float16": "f16",
+            "bf16": "bf16", "BFloat16": "bf16", "bfloat16": "bf16",
+            "f32": "f32", "Float32": "f32", "float32": "f32",
+            "i8": "i8", "Uint8": "i8", "Int8": "i8", "uint8": "i8",
+            "i32": "i32", "Int32": "i32", "Uint32": "i32",
+            "i64": "i64", "Int64": "i64", "Uint64": "i64",
+        }.get(elem_name, "f32")
         p = self.emitter.gep(base, idx, ety)
-        if ety == "f16":
-            return self.emitter.load_gmem_f16(p)
-        return self.emitter.load_f32(p)
+        return self.emitter.ssa(
+            ety, f"llvm.load {p.name} : !llvm.ptr<1> -> {ety}")
 
     def _store_elem(self, base: SSA, idx, val, elem=None, tensor_meta=None):
         assert isinstance(base, SSA) and base.type.startswith("!llvm.ptr"), \
@@ -637,6 +950,7 @@ class KernelInterpreter:
         idx = self._flat_coord(idx, tensor_meta)
         _n = getattr(elem, "name", "")
         ety = {"f16": "f16", "Float16": "f16", "float16": "f16",
+               "bf16": "bf16", "BFloat16": "bf16", "bfloat16": "bf16",
                "f32": "f32", "Float32": "f32", "float32": "f32",
                "i8": "i8", "Uint8": "i8", "Int8": "i8", "uint8": "i8",
                "i32": "i32", "Int32": "i32", "Uint32": "i32",
@@ -661,9 +975,19 @@ class KernelInterpreter:
                 val = self.emitter.ssa("f16", f"arith.truncf {val.name} : f32 to f16")
             elif vt == "f16" and val_t == "f32":
                 val = self.emitter.ssa("f32", f"llvm.fpext {val.name} : f16 to f32")
-        if ety == "f16":
-            self.emitter.store_smem_f16(val, p) if p.type.startswith("!llvm.ptr<3") else \
-                self.emitter.raw(f"llvm.store {val.name}, {p.name} : f16, !llvm.ptr<1>")
+            elif vt == "f32" and val_t == "bf16":
+                val = self.emitter.ssa(
+                    "bf16", f"arith.truncf {val.name} : f32 to bf16")
+            elif vt == "bf16" and val_t == "f32":
+                val = self.emitter.ssa(
+                    "f32", f"arith.extf {val.name} : bf16 to f32")
+        if ety in ("f16", "bf16"):
+            if p.type.startswith("!llvm.ptr<3"):
+                self.emitter.raw(
+                    f"llvm.store {val.name}, {p.name} : {ety}, !llvm.ptr<3>")
+            else:
+                self.emitter.raw(
+                    f"llvm.store {val.name}, {p.name} : {ety}, !llvm.ptr<1>")
             return
         if ety == "f32":
             self.emitter.store_f32(val, p)
@@ -744,7 +1068,8 @@ class KernelInterpreter:
 
     def compare(self, node: ast.Compare):
         assert len(node.ops) == 1 and len(node.comparators) == 1, "chained compare unsupported"
-        lhs, rhs = self.eval(node.left), self.eval(node.comparators[0])
+        lhs = _unwrap_typed_scalar(self.eval(node.left))
+        rhs = _unwrap_typed_scalar(self.eval(node.comparators[0]))
         op = node.ops[0]
         if isinstance(lhs, SSA) or isinstance(rhs, SSA):
             a, b = self._pair(lhs, rhs)
@@ -753,7 +1078,10 @@ class KernelInterpreter:
                 ast.Gt: "sgt", ast.GtE: "sge",
             }[type(op)]
             if a.type.startswith("f"):
-                pred = pred.replace("s", "o")  # ordered float compare
+                pred = {
+                    ast.Eq: "oeq", ast.NotEq: "one", ast.Lt: "olt",
+                    ast.LtE: "ole", ast.Gt: "ogt", ast.GtE: "oge",
+                }[type(op)]
             return self.emitter.ssa("i1", f"arith.cmpi {pred}, {a.name}, {b.name} : {a.type}"
                                     if not a.type.startswith("f")
                                     else f"arith.cmpf {pred}, {a.name}, {b.name} : {a.type}")
@@ -771,7 +1099,8 @@ class KernelInterpreter:
             return v
         if isinstance(v, SSA):
             raise InterpError("dynamic value in boolean context needs explicit compare")
-        return self.emitter.ssa("i1", f"arith.constant {bool(v)} : i1")
+        return self.emitter.ssa(
+            "i1", f"arith.constant {int(bool(v))} : i1")
 
     def _pair(self, lhs, rhs) -> tuple[SSA, SSA]:
         if not isinstance(lhs, SSA):
@@ -881,6 +1210,8 @@ def _py_binop(op, a, b):
     return {
         ast.Add: _op.add, ast.Sub: _op.sub, ast.Mult: _op.mul,
         ast.Div: _op.truediv, ast.FloorDiv: _op.floordiv, ast.Mod: _op.mod,
+        ast.BitAnd: _op.and_, ast.BitOr: _op.or_, ast.BitXor: _op.xor,
+        ast.LShift: _op.lshift, ast.RShift: _op.rshift,
     }[type(op)](a, b)
 
 
