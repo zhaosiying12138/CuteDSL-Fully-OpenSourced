@@ -426,9 +426,9 @@ class Tensor:
             value = e.ssa(
                 elem_type, f"arith.constant {literal} : {elem_type}")
         if value.type != elem_type:
-            if value.type == "i32" and elem_type == "i8":
+            if value.type in ("i32", "i64") and elem_type == "i8":
                 value = e.ssa(
-                    "i8", f"arith.trunci {value.name} : i32 to i8")
+                    "i8", f"arith.trunci {value.name} : {value.type} to i8")
             elif value.type == "f32" and elem_type in ("f16", "bf16"):
                 value = e.ssa(
                     elem_type,

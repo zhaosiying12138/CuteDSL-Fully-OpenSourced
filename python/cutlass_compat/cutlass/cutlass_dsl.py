@@ -82,6 +82,18 @@ _CLASS_BY_DTYPE = {}
 
 def _typed_from_dtype(dtype, ssa=None, value=None):
     import cutlass  # resolve through package exports
+    if dtype is None:
+        # untyped bridge scalar (TypedBool etc.): infer a safe numeric dtype
+        # from the payload so constant folding keeps working
+        if isinstance(value, bool):
+            from cutlass.dtypes import Boolean as _B
+            dtype = _B
+        elif isinstance(value, float):
+            from cutlass.dtypes import Float32 as _F
+            dtype = _F
+        else:
+            from cutlass.dtypes import Int32 as _I
+            dtype = _I
     cls = _CLASS_BY_DTYPE.get(dtype.name)
     if cls is None:
         cls = type(f"_{dtype.name}Scalar", (TypedScalar,), {})

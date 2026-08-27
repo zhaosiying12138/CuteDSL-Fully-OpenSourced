@@ -1032,8 +1032,8 @@ class KernelInterpreter:
             val = self.emitter.ssa(ety, f"arith.constant {vv} : {ety}")
         elif getattr(val, "type", None) and val.type != ety:
             vt, val_t = val.type, ety
-            if vt == "i32" and val_t == "i8":
-                val = self.emitter.ssa("i8", f"arith.trunci {val.name} : i32 to i8")
+            if vt in ("i32", "i64") and val_t == "i8":
+                val = self.emitter.ssa("i8", f"arith.trunci {val.name} : {vt} to i8")
             elif vt == "index" and val_t in ("i32", "i64"):
                 val = self.emitter.ssa(
                     val_t, f"arith.index_cast {val.name} : index to {val_t}")

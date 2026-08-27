@@ -103,7 +103,14 @@ def inline_asm(result_type, operands, asm, constraints,
                       f'nvvm.inline_ptx "{_esc(asm)}" -> {result_type.text}')
             from cutlass._mlir.ir import IrValue
             return IrValue(r)
-    ops = [_fold_operand(o, "") for o in operands]
+    ops = []
+    for o in operands:
+        fo = _fold_operand(o, "")
+        if getattr(fo, "type", "") == "index":
+            # inline-asm numeric operands are 32-bit register class ("r"):
+            # index (64-bit) must narrow before entering the asm
+            fo = e.ssa("i32", f"arith.index_cast {fo.name} : index to i32")
+        ops.append(fo)
     # nvvm.inline_ptx has no 8-bit register constraint. Promote byte operands
     # to a 32-bit register; PTX byte stores consume the low 8 bits.
     ops = [
