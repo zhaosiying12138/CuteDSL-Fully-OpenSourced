@@ -33,6 +33,7 @@
 #define CG_INT_HPP_INCLUDED_
 
 #include <climits>
+#include <functional>
 
 #include "cutegen/cutegen.hpp"
 #include "cutegen/cg_error.hpp"

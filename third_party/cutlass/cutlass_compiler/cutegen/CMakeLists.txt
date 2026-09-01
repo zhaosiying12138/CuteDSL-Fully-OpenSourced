@@ -34,7 +34,7 @@ project(cutegen VERSION 0.1 LANGUAGES CXX)
 option(CUTEGEN_ENABLE_TESTS "Whether to enable cutegen test" ON)
 
 # specify the C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # ----------------------------------------------------------------------
@@ -44,7 +44,7 @@ enable_testing()
 # ----------------------------------------------------------------------
 # Interface library
 add_library(cutegen INTERFACE)
-target_compile_features(cutegen INTERFACE cxx_std_17)
+target_compile_features(cutegen INTERFACE cxx_std_20)
 target_include_directories(cutegen INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # ----------------------------------------------------------------------

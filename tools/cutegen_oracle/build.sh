@@ -14,7 +14,7 @@ CUTEGEN_INC="$ROOT/third_party/cutlass/cutlass_compiler/cutegen/include"
 PYINC=$($PY -c "import sysconfig; print(sysconfig.get_paths()['include'])")
 
 mkdir -p build-oracle
-g++ -std=c++17 -O2 -fPIC -shared \
+g++ -std=c++20 -O2 -fPIC -shared \
     -I "$CUTEGEN_INC" -I "$NANOBIND_INC/include" -I "$NANOBIND_INC/ext/robin_map/include" -I "$PYINC" \
     tools/cutegen_oracle/binding.cpp \
     "$NANOBIND_INC/src/nb_combined.cpp" \

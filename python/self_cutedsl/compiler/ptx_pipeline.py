@@ -11,8 +11,10 @@ serializes via the in-tree LLVM NVPTX backend.
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -25,6 +27,18 @@ DEFAULT_PASSES = [
 ]
 
 _ASSEMBLY_RE = re.compile(r'assembly = "((?:[^"\\]|\\.)*)"')
+
+
+def _compiler_command() -> Path:
+    """Return the native cutlass-compiler executable path."""
+    candidate = CUTLASS_COMPILER
+    if os.name == "nt" and not candidate.exists():
+        candidate = candidate.with_suffix(".exe")
+    return candidate
+
+
+def _debug_file(name: str) -> Path:
+    return Path(tempfile.gettempdir()) / name
 
 
 def _unescape(s: str) -> str:
@@ -41,19 +55,17 @@ def compile_mlir_to_ptx(mlir_text: str | Path, extra_passes: list[str] | None = 
     """Compile an MLIR module (gpu.container_module) to textual sm_120a PTX."""
     if isinstance(mlir_text, Path):
         mlir_text = mlir_text.read_text()
-    cmd = [str(CUTLASS_COMPILER), *DEFAULT_PASSES, *(extra_passes or [])]
+    cmd = [str(_compiler_command()), *DEFAULT_PASSES, *(extra_passes or [])]
     proc = subprocess.run(cmd, input=mlir_text, capture_output=True, text=True)
     if proc.returncode != 0:
         import os as _os
         if _os.environ.get("DG_DUMP_MLIR"):
-            with open("/tmp/fail_mod.mlir", "w") as f:
-                f.write(mlir_text)
+            _debug_file("fail_mod.mlir").write_text(mlir_text)
         raise RuntimeError(
             f"cutlass-compiler failed ({proc.returncode}):\n{proc.stderr[:4000]}")
     import os as _os2
     if _os2.environ.get("DG_DUMP_MLIR_OK"):
-        with open("/tmp/ok_mod.mlir", "w") as f:
-            f.write(mlir_text)
+        _debug_file("ok_mod.mlir").write_text(mlir_text)
     out = proc.stdout
 
     targets = re.findall(r'#nvvm\.target<chip = "([^"]+)"', out)

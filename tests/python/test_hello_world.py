@@ -8,12 +8,17 @@ gpu.printf; output captured by CUDA's printf buffer.
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python"))
 sys.path.insert(0, str(ROOT / "python/cutlass_compat"))
 
 import cutlass
 import cutlass.cute as cute
+
+
+pytestmark = pytest.mark.sm120
 
 
 @cute.kernel

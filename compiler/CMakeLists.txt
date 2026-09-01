@@ -4,6 +4,14 @@
 cmake_minimum_required(VERSION 3.20)
 project(SelfCute LANGUAGES C CXX)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+if(MSVC)
+  add_compile_options(/permissive- /Zc:__cplusplus /Zc:preprocessor
+                      /Zc:externConstexpr /Zc:inline)
+endif()
+
 find_package(MLIR REQUIRED CONFIG)
 message(STATUS "Using MLIRConfig.cMake in: ${MLIR_DIR}")
 

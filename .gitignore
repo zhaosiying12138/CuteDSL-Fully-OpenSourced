@@ -21,6 +21,7 @@ build/
 *.o
 *.a
 *.so
+*.pyd
 *.dylib
 build-*/
 out/

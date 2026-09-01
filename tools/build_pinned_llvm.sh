@@ -34,6 +34,9 @@ git -C scratch/llvm-project checkout --detach "${LLVM_COMMIT}"
 
 cmake -G Ninja -S scratch/llvm-project/llvm -B build-llvm \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_STANDARD=20 \
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+    -DCMAKE_CXX_EXTENSIONS=OFF \
     -DLLVM_ENABLE_PROJECTS=mlir \
     -DLLVM_TARGETS_TO_BUILD="Native;NVPTX" \
     -DLLVM_ENABLE_ASSERTIONS=ON \

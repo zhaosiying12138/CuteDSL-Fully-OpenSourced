@@ -2,7 +2,8 @@
 """inspect_ptx.py — audit PTX produced by the self stack.
 
 The self stack loads textual PTX straight into the CUDA driver JIT
-(``DG_DUMP_PTX=1`` drops every compiled module to ``/tmp/dg_mod_<n>.ptx``).
+(``DG_DUMP_PTX=1`` drops every compiled module to the platform temporary
+directory as ``dg_mod_<n>.ptx``).
 This tool walks those dumps (or any ``--glob``) and verifies, per module:
 
   * the PTX target is exactly ``sm_120a`` (the only supported profile);
@@ -17,7 +18,7 @@ Exit code is non-zero if any check fails, so it can gate CI/regression.
 Usage:
   # run any self-stack workload with dumps enabled, then:
   DG_DUMP_PTX=1 .venv-self/bin/python -m pytest -m sm120 -k dense_gemm
-  .venv-self/bin/python tools/inspect_ptx.py                 # scan /tmp/dg_mod_*.ptx
+  .venv-self/bin/python tools/inspect_ptx.py                 # scan the temp dir
   .venv-self/bin/python tools/inspect_ptx.py --glob 'artifacts/ptx/*.ptx' --strict-mma
 """
 from __future__ import annotations
@@ -26,6 +27,7 @@ import argparse
 import glob
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 TARGET_LINE = re.compile(r"^\.target\s+(\S+)", re.MULTILINE)
@@ -52,8 +54,9 @@ def inspect_module(path: str) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--glob", default="/tmp/dg_mod_*.ptx",
-                    help="glob of PTX dumps (default: /tmp/dg_mod_*.ptx)")
+    default_glob = str(Path(tempfile.gettempdir()) / "dg_mod_*.ptx")
+    ap.add_argument("--glob", default=default_glob,
+                    help=f"glob of PTX dumps (default: {default_glob})")
     ap.add_argument("--strict-mma", action="store_true",
                     help="require every module to contain mma.sync (MMA-heavy "
                          "workloads only)")

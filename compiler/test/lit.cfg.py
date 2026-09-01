@@ -12,8 +12,10 @@ config.suffixes = [".mlir"]
 config.test_exec_root = os.path.join(config.selfcute_obj_root, "test")
 config.test_source_root = os.path.join(config.selfcute_src_root, "test")
 
-config.substitutions.append(("%selfcute_opt", os.path.join(
-    config.selfcute_obj_root, "bin", "selfcute-opt")))
+_selfcute_opt = getattr(config, "selfcute_opt", os.path.join(
+    config.selfcute_obj_root, "bin", "selfcute-opt"))
+config.substitutions.append(("%selfcute_opt", _selfcute_opt))
 
 _tools = getattr(config, "lit_tools_dir", None) or os.environ.get("LLVM_TOOLS_DIR", "")
-config.substitutions.append(("%FileCheck", os.path.join(_tools, "FileCheck")))
+_filecheck = getattr(config, "filecheck", os.path.join(_tools, "FileCheck"))
+config.substitutions.append(("%FileCheck", _filecheck))
