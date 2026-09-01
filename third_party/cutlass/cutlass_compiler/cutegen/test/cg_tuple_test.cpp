@@ -194,10 +194,14 @@ TEST(TupleTest, Basic)
         {
             EXPECT_EQ(cg::get_int(tA[i]), i);
         }
+#if defined(__cpp_exceptions) && !defined(CUTEGEN_DISALLOW_EXCEPTIONS)
         EXPECT_THROW(tA[rank(tA)], std::out_of_range);
+#endif
         cg::int_tuple tB(13);
         EXPECT_EQ(cg::get_int(tB[0]), 13);
+#if defined(__cpp_exceptions) && !defined(CUTEGEN_DISALLOW_EXCEPTIONS)
         EXPECT_THROW(tB[1], std::out_of_range);
+#endif
     }
     // back()
     {

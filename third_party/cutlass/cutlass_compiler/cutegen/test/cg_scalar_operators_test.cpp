@@ -122,8 +122,10 @@ TEST(ScalarOperators, BitwiseNot)
 
     EXPECT_EQ(cg::scalar_bitwise_not<int_tuple>(0xFFFFFFFF), 0);
     // Note that the integral overload uses the type of the operand,
-    // and not the cutegen static integer type.
-    EXPECT_EQ(cg::scalar_bitwise_not<int_tuple>(0xFFFFFFFFL), 0xFFFFFFFF00000000L);
+    // and not the cutegen static integer type. Use an explicit 64-bit type
+    // because `long` is 32-bit on Windows.
+    const int64_t wide_signed_value = 0xFFFFFFFFLL;
+    EXPECT_EQ(cg::scalar_bitwise_not<int_tuple>(wide_signed_value), -4294967296LL);
     {
         auto a = cg::scalar_bitwise_not<int_tuple>(int_tuple(dyn_t{}));
         EXPECT_TRUE(cg::holds_dynamic_int(a));
@@ -142,11 +144,13 @@ TEST(ScalarOperators, LShr)
                                                            std::numeric_limits<int32_t>::max())));
     EXPECT_TRUE(cg::holds_error(cg::scalar_lshr<int_tuple>(1,
                                                            std::numeric_limits<int32_t>::min())));
-    // For 64-bit integers, the shift amount must be less than 64
-    EXPECT_FALSE(cg::holds_error(cg::scalar_lshr<int_tuple>(0xFFFFUL, 33)));
-    EXPECT_FALSE(cg::holds_error(cg::scalar_lshr<int_tuple>(0xFFFFUL, -33)));
-    EXPECT_TRUE(cg::holds_error(cg::scalar_lshr<int_tuple>(0xFFFFUL, 64)));
-    EXPECT_TRUE(cg::holds_error(cg::scalar_lshr<int_tuple>(0xFFFFUL, -64)));
+    // For 64-bit integers, the shift amount must be less than 64. Use an
+    // explicit type because `unsigned long` is 32-bit on Windows.
+    const uint64_t wide_unsigned_value = 0xFFFFU;
+    EXPECT_FALSE(cg::holds_error(cg::scalar_lshr<int_tuple>(wide_unsigned_value, 33)));
+    EXPECT_FALSE(cg::holds_error(cg::scalar_lshr<int_tuple>(wide_unsigned_value, -33)));
+    EXPECT_TRUE(cg::holds_error(cg::scalar_lshr<int_tuple>(wide_unsigned_value, 64)));
+    EXPECT_TRUE(cg::holds_error(cg::scalar_lshr<int_tuple>(wide_unsigned_value, -64)));
     // Shifting an error should result in an error
     EXPECT_TRUE(cg::holds_error(cg::scalar_lshr<int_tuple>(int_tuple(cg::cg_error_t{}), 0)));
     // Shifting a vector should result in an error
@@ -187,11 +191,13 @@ TEST(ScalarOperators, Shl)
                                                           std::numeric_limits<int32_t>::max())));
     EXPECT_TRUE(cg::holds_error(cg::scalar_shl<int_tuple>(1,
                                                           std::numeric_limits<int32_t>::min())));
-    // For 64-bit integers, the shift amount must be less than 64
-    EXPECT_FALSE(cg::holds_error(cg::scalar_shl<int_tuple>(0xFFFFUL, 33)));
-    EXPECT_FALSE(cg::holds_error(cg::scalar_shl<int_tuple>(0xFFFFUL, -33)));
-    EXPECT_TRUE(cg::holds_error(cg::scalar_shl<int_tuple>(0xFFFFUL, 64)));
-    EXPECT_TRUE(cg::holds_error(cg::scalar_shl<int_tuple>(0xFFFFUL, -64)));
+    // For 64-bit integers, the shift amount must be less than 64. Use an
+    // explicit type because `unsigned long` is 32-bit on Windows.
+    const uint64_t wide_unsigned_value = 0xFFFFU;
+    EXPECT_FALSE(cg::holds_error(cg::scalar_shl<int_tuple>(wide_unsigned_value, 33)));
+    EXPECT_FALSE(cg::holds_error(cg::scalar_shl<int_tuple>(wide_unsigned_value, -33)));
+    EXPECT_TRUE(cg::holds_error(cg::scalar_shl<int_tuple>(wide_unsigned_value, 64)));
+    EXPECT_TRUE(cg::holds_error(cg::scalar_shl<int_tuple>(wide_unsigned_value, -64)));
     // Shifting an error should result in an error
     EXPECT_TRUE(cg::holds_error(cg::scalar_shl<int_tuple>(int_tuple(cg::cg_error_t{}), 0)));
     // Shifting a vector should result in an error

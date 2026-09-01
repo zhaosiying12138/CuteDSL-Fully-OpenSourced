@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
@@ -81,8 +82,8 @@ class DriverJit:
         elif _os.environ.get("DG_DUMP_PTX"):
             _n = getattr(DriverJit, "_dump_n", 0) + 1
             DriverJit._dump_n = _n
-            with open(f"/tmp/dg_mod_{_n}.ptx", "w") as f:
-                f.write(ptx if isinstance(ptx, str) else ptx.decode())
+            dump_path = Path(tempfile.gettempdir()) / f"dg_mod_{_n}.ptx"
+            dump_path.write_text(ptx if isinstance(ptx, str) else ptx.decode())
         err, self._mod = cu.cuModuleLoadDataEx(ptx, 0, [], [])
         _check(err, "cuModuleLoadDataEx")
 

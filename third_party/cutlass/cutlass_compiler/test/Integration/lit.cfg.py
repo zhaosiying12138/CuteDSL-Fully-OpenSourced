@@ -111,12 +111,12 @@ def _parse_cuda_visible_devices():
     """Parse CUDA_VISIBLE_DEVICES for nvidia-smi -i selectors.
 
     Returns:
-        None: unset — all physical GPUs are visible to CUDA.
+        None: unset - all physical GPUs are visible to CUDA.
         []: explicitly no GPU (empty, or a lone hide sentinel).
-        non-empty list: physical indices ("0") or UUIDs ("GPU-…").
+        non-empty list: physical indices ("0") or UUIDs ("GPU-...").
 
-    Hide sentinels (none, -1, …) stop parsing but keep valid entries
-    before them, e.g. ``0,-1`` → ``["0"]``.
+    Hide sentinels (none, -1, ...) stop parsing but keep valid entries
+    before them, e.g. ``0,-1`` -> ``["0"]``.
     """
     _HIDE_SENTINELS = frozenset({"none", "-1", "void", "null", "no"})
 
@@ -197,20 +197,31 @@ _use_silicon_device = _has_cuda_runtime and _has_visible_gpu()
 _device_runner = os.path.join(
     config.cutlass_compiler_source_root, "scripts", "run_integration_device.sh"
 )
+_host_runner = os.path.join(
+    config.cutlass_compiler_source_root, "scripts", "run_integration_host.sh"
+)
+if os.name == "nt":
+    _powershell = shutil.which("pwsh") or shutil.which("powershell") or "powershell.exe"
+    _host_runner = '"{}" -NoProfile -ExecutionPolicy Bypass -File "{}"'.format(
+        _powershell,
+        os.path.join(config.cutlass_compiler_source_root, "scripts", "run_integration_host.ps1"),
+    )
+    _device_runner = '"{}" -NoProfile -ExecutionPolicy Bypass -File "{}"'.format(
+        _powershell,
+        os.path.join(config.cutlass_compiler_source_root, "scripts", "run_integration_device.ps1"),
+    )
 
 # Tool substitutions:
 #   - cutlass-compiler: full pipeline driver (cute + base + upstream).
 #   - mlir-runner: JIT executor for the LLVM-dialect output.
-#   - run_integration_host.sh: Host/ wrapper (host-only JIT).
-#   - run_integration_device.sh: Device/ wrapper (GPU silicon).
+#   - host wrapper: host-only JIT, with a native PowerShell wrapper on Windows.
+#   - device wrapper: GPU-silicon execution, with a native PowerShell wrapper on Windows.
 tools = [
     ToolSubst("cutlass-compiler", unresolved="fatal"),
     ToolSubst("mlir-runner", unresolved="fatal"),
     ToolSubst(
         "%cutlass-compiler-run-host",
-        command=os.path.join(
-            config.cutlass_compiler_source_root, "scripts", "run_integration_host.sh"
-        ),
+        command=_host_runner,
         unresolved="fatal",
     ),
     ToolSubst(

@@ -1,8 +1,9 @@
 # Build Guide — CuteDSL-Fully-OpenSourced (sm120 profile)
 
 This guide takes a clean machine to: **toolchain built → correctness tests green
-(121 passed) → performance benchmarks reproduced**. Every command below is the
-exact command used to produce the published results. If anything here fails on
+(185 host + 76 sm120 pytest cases, plus selfcute LIT) → performance
+benchmarks reproduced**. Every command below is the exact command used to
+produce the published results. If anything here fails on
 a supported platform, that is a bug — please open an issue.
 
 ## 1. Prerequisites
@@ -20,8 +21,79 @@ a supported platform, that is a bug — please open an issue.
 | Disk | ~30 GB | pinned LLVM source+build ≈ 20 GB, venvs ≈ 8 GB |
 | RAM | ≥ 16 GB free | |
 
-Two venvs are created; they are the *only* places proprietary NVIDIA compiler
-wheels may exist:
+The commands above are the tested Linux/WSL2 path.  Native Windows x64 is
+supported as a **PTX-generation path** with MSVC; it is not yet a tested
+sm120 execution platform.  In particular, an sm86 GPU can build the compiler
+and emit `.target sm_120a` PTX, but that PTX must not be loaded or executed on
+sm86.
+
+### Native Windows x64 + MSVC prerequisites
+
+Use a Visual Studio Developer PowerShell (not a regular PowerShell) with the
+**Desktop development with C++** workload installed.  The required native
+components are:
+
+- MSVC x64 build tools, Windows 10/11 SDK, `cl.exe`, `link.exe`, and `rc.exe`;
+- CMake ≥ 3.24 and Ninja on `PATH`;
+- Git on `PATH` (the pinned LLVM checkout is fetched by the PowerShell build
+  script);
+- CPython 3.12 x64 and `pip` (a conda installation is not required).
+
+CUDA is **not required to compile or emit PTX**.  This stack uses the LLVM
+NVPTX backend and never invokes nvcc, NVRTC, or ptxas.  CUDA-enabled PyTorch
+and `cuda-python` are only needed for Python host tests that allocate tensors
+or for actually launching kernels.  The NVIDIA Windows driver supplies
+`nvcuda.dll` for that runtime path.
+
+Windows build scripts deliberately replace the shell scripts; do not run the
+`.sh` files from Windows:
+
+```powershell
+# From a VS Developer PowerShell, at the repository root.
+# This validates nanobind, torch, and cuda-python in the current Python.
+# It does not create a venv or install the unavailable Windows reference wheel.
+.\tools\make_envs.ps1
+
+# This step checks out C:\llvm-project at the pinned revision, then downloads
+# nothing if that commit is already present.  The build is large: roughly
+# 20 GB of source/build space and tens of minutes on a modern workstation.
+.\tools\build_pinned_llvm.ps1 -Jobs 16
+
+# Build cutlass_compiler, selfcute-opt, and the LIT test target.
+.\tools\build_compiler.ps1 -Jobs 16
+
+# Build the in-process cutegen oracle as a .pyd using MSVC.
+.\tools\cutegen_oracle\build.ps1
+```
+
+The Windows build scripts use `ccache.exe` by default.  Install ccache and put
+it on `PATH`, or pass `-NoCcache` to `build_pinned_llvm.ps1`,
+`build_compiler.ps1`, and `cutegen_oracle\build.ps1` to build without it.
+
+The Windows scripts use the current `python.exe` environment.  To generate
+PTX without a GPU, put the source tree on `PYTHONPATH` and call the compiler
+bridge directly:
+
+```powershell
+$env:PYTHONPATH = "$PWD\python;$PWD\python\cutlass_compat"
+python -c "from pathlib import Path; from self_cutedsl.compiler import compile_mlir_to_ptx; print(compile_mlir_to_ptx(Path('tests/ptx/vector_add.mlir')))"
+```
+
+The expected output contains `.version 8.7`, `.target sm_120a`, and a kernel
+`.entry`.  Do not run the `sm120` tests on an sm86 device: their runtime
+checks are intentionally for the RTX 5090/sm120a release profile only.  The
+native test wrapper skips those tests by default.  On an sm86 Windows machine,
+the expected result is 185 passed and 76 deselected, followed by the selfcute
+LIT check:
+
+```powershell
+.\tools\run_correctness.ps1
+# only on a compatible sm120 GPU:
+.\tools\run_correctness.ps1 -IncludeSm120
+```
+
+Two venvs are created on the reference Linux machine; they are the *only*
+places proprietary NVIDIA compiler wheels may exist:
 
 - `.venv-reference` — official `nvidia-cutlass-dsl==4.7.0` + torch. Baseline
   capture only.
@@ -29,9 +101,12 @@ wheels may exist:
   never contain `nvidia-cutlass-dsl` / `_cutlass_ir` / nvcc / NVRTC / ptxas
   (enforced by `tools/verify_open_stack.py`).
 
-## 2. Build the toolchain
+## 2. Linux/WSL2 toolchain build
 
-All commands run from the repository root.
+The commands in this section and the remaining shell examples are for the
+tested Linux/WSL2 workflow.  Native Windows users should use the PowerShell
+block above rather than translating the `.venv-*`, `scratch/`, or Unix shell
+paths below.  All Linux/WSL2 commands run from the repository root.
 
 ```bash
 # (1) Pinned LLVM — the exact revision required by the vendored cutlass_compiler
@@ -84,13 +159,14 @@ tools/run_correctness.sh
 
 Runs (1) host/compiler tests `pytest -m "not sm120"`, (2) on-GPU release-gate
 tests `pytest -m sm120`, (3) selfcute dialect LIT checks. Expected on a healthy
-tree: **121 passed, 0 failed**, all LIT green.
+tree: **261 passed, 0 failed** (185 host/compiler + 76 sm120), with all LIT
+checks green.
 
 To audit the PTX actually shipped to the driver JIT for any workload:
 
 ```bash
 DG_DUMP_PTX=1 .venv-self/bin/python -m pytest -m sm120 -k dense_gemm
-.venv-self/bin/python tools/inspect_ptx.py          # scans /tmp/dg_mod_*.ptx
+.venv-self/bin/python tools/inspect_ptx.py          # scans the platform temp dir
 ```
 
 ## 5. Performance benchmarks

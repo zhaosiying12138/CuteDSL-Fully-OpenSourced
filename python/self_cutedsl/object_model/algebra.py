@@ -314,9 +314,13 @@ _INFER_RE = _re.compile(r"inferred type\(s\) '([^']+)'")
 
 
 def _cc_path():
+    import os
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[3]
-    return str(root / "build-compiler/tools/cutlass-compiler/cutlass-compiler")
+    path = root / "build-compiler/tools/cutlass-compiler/cutlass-compiler"
+    if os.name == "nt" and not path.exists():
+        path = path.with_suffix(".exe")
+    return str(path)
 
 
 def infer_result_type(op_text: str, timeout: int = 30) -> str | None:

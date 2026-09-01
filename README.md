@@ -44,7 +44,18 @@ CUDA Driver JIT (cuModuleLoadDataEx)       ← 本仓库 runtime；全程无 ptx
 
 ## 3. 构建
 
-前置依赖与逐步指南见 **[docs/BUILD.md](docs/BUILD.md)**。概览：
+已验证的构建路径是 Linux/WSL2 + RTX 5090。原生 Windows x64/MSVC
+路径可构建宿主编译器并在没有 GPU 的情况下生成 `sm_120a` PTX；但
+sm86 GPU 不能执行该 PTX。Windows 请使用 **[docs/BUILD.md](docs/BUILD.md)**
+中的 PowerShell 脚本，不要运行 `.sh` 脚本。
+
+前置依赖与逐步指南见 **[docs/BUILD.md](docs/BUILD.md)**。
+
+### Linux/WSL2 概览
+
+下面的 shell 命令适用于 Linux/WSL2。原生 Windows 用户请使用
+`docs/BUILD.md` 中的 PowerShell 命令，不要将这些 `.venv-*` 和 Unix 路径
+示例直接翻译到 Windows。
 
 ```bash
 tools/build_pinned_llvm.sh        # 锁定 LLVM 23a60f15（cutlass_compiler 要求的精确版本）
@@ -61,7 +72,8 @@ tools/fetch_third_party.sh        # flashinfer @ 9d33a28e（verbatim 算子语�
 tools/run_correctness.sh
 ```
 
-期望输出：**259 passed, 0 failed**（宿主/编译器测试 + 5090 golden + selfcute LIT）。其中包含：
+期望输出：**261 个 pytest 用例通过，0 失败**（185 个宿主/编译器测试 + 76 个
+`sm120` 测试；selfcute LIT 另行报告）。其中包含：
 
 - 官方算子 verbatim golden：dense_gemm、blockscaled NVFP4、Ampere elementwise、flashinfer rmsnorm/add-rmsnorm/b12x MoE；
 - cutegen oracle 与 cute dialect verifier 的**生成式差分护栏**（`test_layout_oracle_differential`：45 个含动态 `?` 与嵌套 mode 的布局 × 4 个代数 op，双 oracle 逐字符一致）；
@@ -128,7 +140,7 @@ python/self_cutedsl/    前端（jit/interp/emitter/builtins）、对象模型�
 python/cutlass_compat/  官方 cutlass.* API 面 → 本栈的 BSD 兼容层（flashinfer 桥在此）
 compiler/               selfcute dialect 骨架（ODS；生产路径未启用）
 tools/                  构建/验证/基准（perf/ 与 cutegen_oracle/ 在此）
-tests/                  259 项测试（verbatim golden + 差分护栏 + 策略测试）
+tests/                  261 项测试（verbatim golden + 差分护栏 + 策略测试）
 compat/                 冻结的工具链锁与参考基线
 artifacts/              性能/基线数据与 SBOM
 third_party/cutlass/    vendored BSD 子树（cutlass_compiler + examples）

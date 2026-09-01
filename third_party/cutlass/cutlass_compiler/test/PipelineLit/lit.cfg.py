@@ -62,7 +62,7 @@ for tool_dir in pipeline_tool_dirs:
     llvm_config.with_environment("PATH", tool_dir, append_path=True)
 
 # `cutlass-compiler` is the umbrella driver (cute + base + upstream
-# passes) — the natural tool for end-to-end pipeline tests that
+# passes) - the natural tool for end-to-end pipeline tests that
 # straddle dialect layers. No `mlir-runner` here; this suite is
 # structural-only (LIT-only assertions on emitted IR), unlike
 # `Integration/host/` which JIT-executes.

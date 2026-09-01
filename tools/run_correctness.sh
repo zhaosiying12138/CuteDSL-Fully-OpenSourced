@@ -6,7 +6,8 @@
 #   2. on-GPU release-gate tests  (pytest -m sm120)   [needs the 5090]
 #   3. selfcute dialect LIT checks (ninja check-selfcute-lit)
 #
-# Expected on a healthy tree: 121 passed, 0 failed (115 + 6), all LIT green.
+# Expected on a healthy tree: 261 pytest cases pass, 0 fail (185 host/compiler
+# plus 76 sm120), and all LIT checks are green.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 

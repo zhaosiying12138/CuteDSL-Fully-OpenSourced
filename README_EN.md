@@ -66,8 +66,20 @@ correctness, dual-stack performance:
 
 ## 3. Building
 
+The tested build is Linux/WSL2 on an RTX 5090.  A native Windows x64/MSVC
+PTX-generation path is also provided: it can build the host compiler and emit
+`sm_120a` PTX without a GPU, but an sm86 GPU cannot execute that PTX.  Use the
+PowerShell scripts described in **[docs/BUILD.md](docs/BUILD.md)**; do not run
+the `.sh` scripts from Windows.
+
 Prerequisites and the step-by-step guide live in
-**[docs/BUILD.md](docs/BUILD.md)**. Overview:
+**[docs/BUILD.md](docs/BUILD.md)**.
+
+### Linux/WSL2 overview
+
+The following shell commands are for Linux/WSL2.  Native Windows users should
+use the PowerShell commands in `docs/BUILD.md` instead of translating these
+`.venv-*` and Unix-path examples.
 
 ```bash
 tools/build_pinned_llvm.sh        # pinned LLVM 23a60f15 (exact revision cutlass_compiler needs)
@@ -84,8 +96,8 @@ tools/fetch_third_party.sh        # flashinfer @ 9d33a28e (verbatim operator cor
 tools/run_correctness.sh
 ```
 
-Expected: **259 passed, 0 failed** (host/compiler tests + on-GPU golden +
-selfcute LIT), including:
+Expected: **261 pytest cases passed, 0 failed** (185 host/compiler + 76
+on-GPU `sm120`; selfcute LIT is reported separately), including:
 
 - verbatim golden on the official operators: dense_gemm, blockscaled NVFP4,
   Ampere elementwise, flashinfer rmsnorm/add-rmsnorm/b12x MoE;
@@ -194,7 +206,7 @@ python/self_cutedsl/    frontend (jit/interp/emitter/builtins), object model, ru
 python/cutlass_compat/  BSD compatibility layer mapping the official cutlass.* API onto this stack
 compiler/               selfcute dialect skeletons (ODS; not on the production path)
 tools/                  build/verify/bench (perf/ and cutegen_oracle/ live here)
-tests/                  259 tests (verbatim golden + differential guardrail + policy tests)
+tests/                  261 tests (verbatim golden + differential guardrail + policy tests)
 compat/                 frozen toolchain lock and reference baselines
 artifacts/              performance/baseline data and the SBOM
 third_party/cutlass/    vendored BSD subtree (cutlass_compiler + examples)
